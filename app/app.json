@@ -16,7 +16,10 @@
     },
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Salon At Home uses your location to auto-fill saved service addresses."
+      }
     },
     "android": {
       "softwareKeyboardLayoutMode": "resize",
@@ -25,7 +28,13 @@
       }
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Salon At Home uses your location to auto-fill saved service addresses."
+        }
+      ]
     ]
   }
 }

@@ -1,40 +1,325 @@
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SessionUser } from "../../App";
+import { API_URL, apiAssetUrl, apiRequest } from "../../api/client";
 import { colors } from "../../utils/theme";
 
-export function ProfileScreen({ user, onLogout }: { user: SessionUser; onLogout: () => Promise<void> }) {
+type Address = {
+  id: string;
+  label: string;
+  line1: string;
+  line2?: string | null;
+  city: string;
+  state: string;
+  pincode: string;
+  isDefault: boolean;
+};
+
+type Profile = SessionUser & {
+  emailVerified: boolean;
+  addresses: Address[];
+};
+
+type Booking = {
+  id: string;
+  scheduledAt: string;
+  address: string;
+  totalAmount: number;
+  status: string;
+  salon?: { name: string };
+  service?: { name: string };
+};
+
+const emptyAddress = { label: "", line1: "", line2: "", city: "", state: "", pincode: "", isDefault: false };
+
+export function ProfileScreen({
+  token,
+  user,
+  onLogout,
+  onUserUpdated,
+}: {
+  token: string;
+  user: SessionUser;
+  onLogout: () => Promise<void>;
+  onUserUpdated: (user: SessionUser) => void;
+}) {
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [name, setName] = useState(user.name ?? "");
+  const [phone, setPhone] = useState(user.phone);
+  const [address, setAddress] = useState(emptyAddress);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [detectingLocation, setDetectingLocation] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    void loadProfile();
+  }, []);
+
+  async function loadProfile() {
+    setLoading(true);
+    setError("");
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const [nextProfile, nextBookings] = await Promise.all([
+        apiRequest<Profile>("/profile", { headers }),
+        apiRequest<Booking[]>("/bookings", { headers }),
+      ]);
+      setProfile(nextProfile);
+      setBookings(nextBookings);
+      setName(nextProfile.name ?? "");
+      setPhone(nextProfile.phone);
+      onUserUpdated(nextProfile);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Could not load profile");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function savePersonalInfo() {
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const nextProfile = await apiRequest<Profile>("/profile", {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name, phone }),
+      });
+      setProfile(nextProfile);
+      onUserUpdated(nextProfile);
+      setNotice("Profile updated");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Could not update profile");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function uploadPhoto() {
+    setError("");
+    setNotice("");
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setError("Allow photo access to upload a profile picture.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      mediaTypes: ["images"],
+      quality: 0.82,
+    });
+    if (result.canceled) return;
+
+    setSaving(true);
+    try {
+      const asset = result.assets[0];
+      const image = await fetch(asset.uri);
+      const body = await image.blob();
+      const nextProfile = await fetch(`${API_URL}/profile/photo`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": asset.mimeType ?? "image/jpeg",
+        },
+        body,
+      }).then(async (response) => {
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null) as { error?: string } | null;
+          throw new Error(payload?.error ?? "Could not upload profile photo");
+        }
+        return response.json() as Promise<Profile>;
+      });
+      setProfile(nextProfile);
+      onUserUpdated(nextProfile);
+      setNotice("Profile photo updated");
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Could not upload profile photo");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addAddress() {
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      await apiRequest<Address>("/profile/addresses", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify(address),
+      });
+      setAddress(emptyAddress);
+      setNotice("Address saved");
+      await loadProfile();
+    } catch (addressError) {
+      setError(addressError instanceof Error ? addressError.message : "Could not save address");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function detectAddress() {
+    setDetectingLocation(true);
+    setError("");
+    setNotice("");
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        setError("Allow location access to auto-detect your address.");
+        return;
+      }
+
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const [place] = await Location.reverseGeocodeAsync(position.coords);
+      if (!place) throw new Error("Could not detect an address from your location");
+
+      const streetParts = [place.name, place.street].filter(Boolean);
+      const line1 = streetParts.length ? streetParts.join(", ") : [place.district, place.subregion].filter(Boolean).join(", ");
+      const line2 = [place.district, place.subregion].filter(Boolean).join(", ");
+      setAddress((current) => ({
+        ...current,
+        label: current.label || "Current Location",
+        line1: line1 || current.line1,
+        line2: line2 || current.line2,
+        city: place.city || current.city,
+        state: place.region || current.state,
+        pincode: place.postalCode || current.pincode,
+      }));
+      setNotice("Location detected. Review the address before saving.");
+    } catch (locationError) {
+      setError(locationError instanceof Error ? locationError.message : "Could not detect location");
+    } finally {
+      setDetectingLocation(false);
+    }
+  }
+
+  async function makeDefaultAddress(id: string) {
+    await apiRequest<Address>(`/profile/addresses/${id}`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ isDefault: true }),
+    });
+    await loadProfile();
+  }
+
+  async function deleteAddress(id: string) {
+    await apiRequest<void>(`/profile/addresses/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    await loadProfile();
+  }
+
   const displayRole = user.role === "OWNER" ? "MERCHANT" : user.role;
-  const initials = (user.name ?? user.email ?? "SA").split(/[\s@]+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
+  const photoUrl = apiAssetUrl(profile?.profilePhotoUrl ?? user.profilePhotoUrl);
+  const initials = (profile?.name ?? user.name ?? user.email ?? "SA").split(/[\s@]+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
+
+  if (loading) {
+    return <View style={styles.center}><ActivityIndicator color={colors.cyan} /></View>;
+  }
 
   return (
-    <ScrollView contentContainerStyle={styles.page}>
-      <Text style={styles.eyebrow}>ACCOUNT // PROFILE</Text>
-      <View style={styles.hero}>
-        <View style={styles.avatar}><Text style={styles.initials}>{initials}</Text></View>
-        <View style={styles.heroCopy}>
-          <Text style={styles.name}>{user.name ?? "Salon At Home User"}</Text>
-          <Text style={styles.role}>{displayRole} ACCOUNT</Text>
-          <Text style={styles.status}>● VERIFIED SESSION</Text>
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flex}>
+      <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <Text style={styles.eyebrow}>ACCOUNT // PROFILE</Text>
+        <View style={styles.hero}>
+          <TouchableOpacity onPress={() => void uploadPhoto()} style={styles.avatar}>
+            {photoUrl ? <Image source={{ uri: photoUrl }} style={styles.avatarImage} /> : <Text style={styles.initials}>{initials}</Text>}
+          </TouchableOpacity>
+          <View style={styles.heroCopy}>
+            <Text style={styles.name}>{profile?.name ?? "Salon At Home User"}</Text>
+            <Text style={styles.role}>{displayRole} ACCOUNT</Text>
+            <Text style={styles.status}>{profile?.emailVerified ? "VERIFIED SESSION" : "EMAIL NOT VERIFIED"}</Text>
+          </View>
         </View>
-      </View>
+        <TouchableOpacity onPress={() => void uploadPhoto()} style={styles.secondary}><Text style={styles.secondaryText}>UPLOAD PROFILE PHOTO</Text></TouchableOpacity>
 
-      <Text style={styles.section}>PERSONAL INFORMATION</Text>
-      <ProfileRow label="FULL NAME" value={user.name ?? "Not added"} />
-      <ProfileRow label="EMAIL ADDRESS" value={user.email ?? "Not added"} />
-      <ProfileRow label="PHONE NUMBER" value={user.phone} />
-      <ProfileRow label="ACCOUNT TYPE" value={displayRole} highlight />
+        {!!notice && <Text style={styles.notice}>{notice}</Text>}
+        {!!error && <Text style={styles.error}>{error}</Text>}
 
-      <Text style={styles.section}>SECURITY</Text>
-      <View style={styles.security}>
-        <Text style={styles.securityTitle}>PASSWORD PROTECTED</Text>
-        <Text style={styles.securityText}>Your active session is stored securely on this device. Logging out invalidates its access token immediately.</Text>
-      </View>
+        <Text style={styles.section}>PERSONAL INFORMATION</Text>
+        <Field label="FULL NAME" value={name} onChangeText={setName} placeholder="Your name" />
+        <ProfileRow label="EMAIL ADDRESS" value={profile?.email ?? "Not added"} />
+        <Field label="PHONE NUMBER" value={phone} onChangeText={setPhone} placeholder="9876543210" keyboardType="phone-pad" />
+        <ProfileRow label="ACCOUNT TYPE" value={displayRole} highlight />
+        <TouchableOpacity disabled={saving} onPress={() => void savePersonalInfo()} style={styles.primary}>
+          {saving ? <ActivityIndicator color="#00202a" /> : <Text style={styles.primaryText}>SAVE PERSONAL INFO</Text>}
+        </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => void onLogout()} style={styles.logout}>
-        <Text style={styles.logoutText}>LOGOUT FROM DEVICE</Text>
-      </TouchableOpacity>
-    </ScrollView>
+        <Text style={styles.section}>SAVED ADDRESSES</Text>
+        {profile?.addresses.length ? profile.addresses.map((item) => (
+          <View style={styles.addressCard} key={item.id}>
+            <View style={styles.addressHeader}>
+              <Text style={styles.addressLabel}>{item.label}</Text>
+              {item.isDefault && <Text style={styles.defaultBadge}>DEFAULT</Text>}
+            </View>
+            <Text style={styles.addressText}>{[item.line1, item.line2, item.city, item.state, item.pincode].filter(Boolean).join(", ")}</Text>
+            <View style={styles.rowActions}>
+              {!item.isDefault && <TouchableOpacity onPress={() => void makeDefaultAddress(item.id)}><Text style={styles.link}>MAKE DEFAULT</Text></TouchableOpacity>}
+              <TouchableOpacity onPress={() => Alert.alert("Delete address?", "This saved address will be removed.", [{ text: "Cancel" }, { text: "Delete", onPress: () => void deleteAddress(item.id), style: "destructive" }])}><Text style={styles.deleteLink}>DELETE</Text></TouchableOpacity>
+            </View>
+          </View>
+        )) : <Text style={styles.empty}>No saved addresses yet.</Text>}
+
+        <View style={styles.addressForm}>
+          <TouchableOpacity disabled={detectingLocation} onPress={() => void detectAddress()} style={styles.secondary}>
+            {detectingLocation ? <ActivityIndicator color={colors.cyan} /> : <Text style={styles.secondaryText}>AUTO DETECT LOCATION</Text>}
+          </TouchableOpacity>
+          <Field label="LABEL" value={address.label} onChangeText={(label) => setAddress((current) => ({ ...current, label }))} placeholder="Home, Work, Studio" />
+          <Field label="ADDRESS LINE 1" value={address.line1} onChangeText={(line1) => setAddress((current) => ({ ...current, line1 }))} placeholder="House number and street" />
+          <Field label="ADDRESS LINE 2" value={address.line2} onChangeText={(line2) => setAddress((current) => ({ ...current, line2 }))} placeholder="Landmark or area" />
+          <View style={styles.twoColumns}>
+            <Field label="CITY" value={address.city} onChangeText={(city) => setAddress((current) => ({ ...current, city }))} placeholder="City" />
+            <Field label="PINCODE" value={address.pincode} onChangeText={(pincode) => setAddress((current) => ({ ...current, pincode }))} placeholder="560001" keyboardType="number-pad" />
+          </View>
+          <Field label="STATE" value={address.state} onChangeText={(state) => setAddress((current) => ({ ...current, state }))} placeholder="State" />
+          <TouchableOpacity onPress={() => setAddress((current) => ({ ...current, isDefault: !current.isDefault }))} style={styles.checkbox}>
+            <View style={[styles.checkboxBox, address.isDefault && styles.checkboxActive]} />
+            <Text style={styles.checkboxText}>Set as default address</Text>
+          </TouchableOpacity>
+          <TouchableOpacity disabled={saving} onPress={() => void addAddress()} style={styles.primary}><Text style={styles.primaryText}>SAVE ADDRESS</Text></TouchableOpacity>
+        </View>
+
+        <Text style={styles.section}>BOOKING HISTORY</Text>
+        {bookings.length ? bookings.map((booking) => (
+          <View style={styles.bookingCard} key={booking.id}>
+            <View>
+              <Text style={styles.bookingTitle}>{booking.service?.name ?? "Salon service"}</Text>
+              <Text style={styles.bookingMeta}>{booking.salon?.name ?? "Salon"} | {new Date(booking.scheduledAt).toLocaleString()}</Text>
+              <Text style={styles.bookingMeta}>{booking.address}</Text>
+            </View>
+            <View style={styles.bookingSide}>
+              <Text style={styles.bookingStatus}>{booking.status}</Text>
+              <Text style={styles.bookingAmount}>INR {booking.totalAmount}</Text>
+            </View>
+          </View>
+        )) : <Text style={styles.empty}>No bookings yet.</Text>}
+
+        <Text style={styles.section}>SECURITY</Text>
+        <View style={styles.security}>
+          <Text style={styles.securityTitle}>PASSWORD PROTECTED</Text>
+          <Text style={styles.securityText}>Your active session is stored securely on this device. Logging out invalidates its access token immediately.</Text>
+        </View>
+
+        <TouchableOpacity onPress={() => void onLogout()} style={styles.logout}>
+          <Text style={styles.logoutText}>LOGOUT FROM DEVICE</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
+}
+
+function Field(props: React.ComponentProps<typeof TextInput> & { label: string }) {
+  const { label, ...inputProps } = props;
+  return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput {...inputProps} placeholderTextColor="#54717d" style={styles.input} /></View>;
 }
 
 function ProfileRow({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
@@ -42,5 +327,55 @@ function ProfileRow({ label, value, highlight = false }: { label: string; value:
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 20, paddingBottom: 30 }, eyebrow: { color: colors.cyan, fontSize: 9, letterSpacing: 1.8, marginBottom: 14 }, hero: { flexDirection: "row", alignItems: "center", padding: 17, borderWidth: 1, borderColor: "#205063", backgroundColor: colors.panelRaised }, avatar: { width: 64, height: 64, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan, backgroundColor: "#103746" }, initials: { color: colors.cyan, fontSize: 21, fontWeight: "900", letterSpacing: 1 }, heroCopy: { marginLeft: 15, flex: 1 }, name: { color: colors.text, fontSize: 20, fontWeight: "800" }, role: { color: colors.amber, fontSize: 9, fontWeight: "900", letterSpacing: 1.4, marginTop: 7 }, status: { color: colors.green, fontSize: 9, fontWeight: "800", letterSpacing: 1, marginTop: 8 }, section: { color: colors.text, fontSize: 12, fontWeight: "800", letterSpacing: 1.4, marginTop: 25, marginBottom: 10 }, row: { padding: 14, marginBottom: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel }, label: { color: colors.muted, fontSize: 9, fontWeight: "800", letterSpacing: 1 }, value: { color: colors.text, fontSize: 13, fontWeight: "700", marginTop: 7 }, highlight: { color: colors.cyan, fontSize: 13, fontWeight: "800", marginTop: 7 }, security: { padding: 14, borderWidth: 1, borderColor: "#594320", backgroundColor: "#211b12" }, securityTitle: { color: colors.amber, fontSize: 10, fontWeight: "900", letterSpacing: 1.1 }, securityText: { color: "#b5a785", fontSize: 11, lineHeight: 18, marginTop: 8 }, logout: { alignItems: "center", marginTop: 21, padding: 14, borderWidth: 1, borderColor: "#7c3535", backgroundColor: "#241719" }, logoutText: { color: "#ff8d86", fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
+  flex: { flex: 1 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  page: { padding: 20, paddingBottom: 34 },
+  eyebrow: { color: colors.cyan, fontSize: 9, letterSpacing: 1.8, marginBottom: 14 },
+  hero: { flexDirection: "row", alignItems: "center", padding: 17, borderWidth: 1, borderColor: "#205063", backgroundColor: colors.panelRaised },
+  avatar: { width: 68, height: 68, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan, backgroundColor: "#103746", overflow: "hidden" },
+  avatarImage: { width: "100%", height: "100%" },
+  initials: { color: colors.cyan, fontSize: 21, fontWeight: "900", letterSpacing: 1 },
+  heroCopy: { marginLeft: 15, flex: 1 },
+  name: { color: colors.text, fontSize: 20, fontWeight: "800" },
+  role: { color: colors.amber, fontSize: 9, fontWeight: "900", letterSpacing: 1.4, marginTop: 7 },
+  status: { color: colors.green, fontSize: 9, fontWeight: "800", letterSpacing: 1, marginTop: 8 },
+  section: { color: colors.text, fontSize: 12, fontWeight: "800", letterSpacing: 1.4, marginTop: 25, marginBottom: 10 },
+  field: { flex: 1, marginBottom: 9 },
+  label: { color: colors.muted, fontSize: 9, fontWeight: "800", letterSpacing: 1, marginBottom: 7 },
+  input: { color: colors.text, padding: 13, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, fontSize: 13 },
+  row: { padding: 14, marginBottom: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  value: { color: colors.text, fontSize: 13, fontWeight: "700", marginTop: 7 },
+  highlight: { color: colors.cyan, fontSize: 13, fontWeight: "800", marginTop: 7 },
+  primary: { alignItems: "center", justifyContent: "center", minHeight: 44, marginTop: 9, padding: 12, backgroundColor: colors.cyan },
+  primaryText: { color: "#00202a", fontWeight: "900", fontSize: 10, letterSpacing: 1.2 },
+  secondary: { alignItems: "center", padding: 12, marginTop: 10, borderWidth: 1, borderColor: colors.cyan },
+  secondaryText: { color: colors.cyan, fontWeight: "900", fontSize: 10, letterSpacing: 1.1 },
+  notice: { color: colors.green, fontSize: 11, marginTop: 14 },
+  error: { color: "#ff7b73", fontSize: 11, marginTop: 14 },
+  addressCard: { padding: 14, marginBottom: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  addressHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  addressLabel: { color: colors.text, fontSize: 14, fontWeight: "800" },
+  defaultBadge: { color: colors.green, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
+  addressText: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 8 },
+  rowActions: { flexDirection: "row", gap: 16, marginTop: 12 },
+  link: { color: colors.cyan, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
+  deleteLink: { color: "#ff8d86", fontSize: 10, fontWeight: "900", letterSpacing: 1 },
+  empty: { color: colors.muted, fontSize: 12, paddingVertical: 8 },
+  addressForm: { padding: 14, marginTop: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: "#07151f" },
+  twoColumns: { flexDirection: "row", gap: 10 },
+  checkbox: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4, marginBottom: 6 },
+  checkboxBox: { width: 18, height: 18, borderWidth: 1, borderColor: colors.border },
+  checkboxActive: { backgroundColor: colors.cyan, borderColor: colors.cyan },
+  checkboxText: { color: colors.text, fontSize: 12, fontWeight: "700" },
+  bookingCard: { flexDirection: "row", justifyContent: "space-between", gap: 10, padding: 14, marginBottom: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  bookingTitle: { color: colors.text, fontSize: 14, fontWeight: "800" },
+  bookingMeta: { color: colors.muted, fontSize: 10, marginTop: 6, maxWidth: 210 },
+  bookingSide: { alignItems: "flex-end" },
+  bookingStatus: { color: colors.amber, fontSize: 9, fontWeight: "900" },
+  bookingAmount: { color: colors.cyan, fontSize: 11, fontWeight: "800", marginTop: 8 },
+  security: { padding: 14, borderWidth: 1, borderColor: "#594320", backgroundColor: "#211b12" },
+  securityTitle: { color: colors.amber, fontSize: 10, fontWeight: "900", letterSpacing: 1.1 },
+  securityText: { color: "#b5a785", fontSize: 11, lineHeight: 18, marginTop: 8 },
+  logout: { alignItems: "center", marginTop: 21, padding: 14, borderWidth: 1, borderColor: "#7c3535", backgroundColor: "#241719" },
+  logoutText: { color: "#ff8d86", fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
 });

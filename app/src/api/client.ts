@@ -11,7 +11,14 @@ function getApiUrl() {
   return "http://localhost:4000/api";
 }
 
-const API_URL = getApiUrl();
+export const API_URL = getApiUrl();
+export const API_ORIGIN = API_URL.replace(/\/api\/?$/, "");
+
+export function apiAssetUrl(path?: string | null) {
+  if (!path) return undefined;
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${API_ORIGIN}${path.startsWith("/") ? path : `/${path}`}`;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -41,5 +48,6 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
     const body = await response.json().catch(() => null) as { error?: string; action?: string; email?: string } | null;
     throw new ApiError(body?.error ?? "Something went wrong. Please try again.", response.status, body ?? undefined);
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }

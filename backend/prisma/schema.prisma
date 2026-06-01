@@ -34,6 +34,7 @@ model User {
   phone     String    @unique
   email     String?   @unique
   password  String?
+  profilePhotoUrl String?
   sessionVersion Int      @default(0)
   emailVerified Boolean   @default(false)
   verificationCodeHash String?
@@ -46,6 +47,24 @@ model User {
   salons    Salon[]
   bookings  Booking[]
   reviews   Review[]
+  addresses UserAddress[]
+}
+
+model UserAddress {
+  id        String   @id @default(uuid())
+  label     String
+  line1     String
+  line2     String?
+  city      String
+  state     String
+  pincode   String
+  isDefault Boolean  @default(false)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model Salon {

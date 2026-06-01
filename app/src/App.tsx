@@ -12,7 +12,7 @@ import { ProfileScreen } from "./screens/profile/ProfileScreen";
 import { colors } from "./utils/theme";
 
 export type UserRole = "CLIENT" | "OWNER" | "ADMIN";
-export type SessionUser = { id: string; name?: string | null; email?: string | null; phone: string; role: UserRole };
+export type SessionUser = { id: string; name?: string | null; email?: string | null; phone: string; role: UserRole; profilePhotoUrl?: string | null };
 export type AuthSession = { token: string; user: SessionUser };
 
 const TOKEN_KEY = "salon_at_home_token";
@@ -60,6 +60,10 @@ export default function App() {
     setTab("home");
   }
 
+  function handleUserUpdated(user: SessionUser) {
+    setSession((current) => current ? { ...current, user: { ...current.user, ...user } } : current);
+  }
+
   async function handleLogout() {
     if (session) {
       await apiRequest("/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${session.token}` } }).catch(() => null);
@@ -85,7 +89,7 @@ export default function App() {
         <Text style={styles.role}>{session.user.role === "OWNER" ? "MERCHANT" : session.user.role}</Text>
       </View>
       <View style={styles.content}>
-        {tab === "profile" && <ProfileScreen user={session.user} onLogout={handleLogout} />}
+        {tab === "profile" && <ProfileScreen token={session.token} user={session.user} onLogout={handleLogout} onUserUpdated={handleUserUpdated} />}
         {tab === "home" && session.user.role === "CLIENT" && <ClientHomeScreen />}
         {tab === "home" && session.user.role === "OWNER" && <OwnerHomeScreen />}
         {tab === "home" && session.user.role === "ADMIN" && <AdminHomeScreen />}
