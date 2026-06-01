@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "Salon At Home",
+    "slug": "salon-at-home",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "androidStatusBar": {
+      "hidden": true
+    },
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#06101a"
+      }
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
+  }
+}

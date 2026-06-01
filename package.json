@@ -1,0 +1,22 @@
+{
+  "name": "salon-at-home",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "app"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace backend",
+    "dev:app": "npm run start --workspace app",
+    "build": "npm run build --workspace backend",
+    "typecheck": "npm run typecheck --workspace backend && npm run typecheck --workspace app"
+  },
+  "dependencies": {
+    "react": "19.1.0",
+    "react-native": "0.81.5"
+  },
+  "overrides": {
+    "react": "19.1.0",
+    "react-native": "0.81.5"
+  }
+}

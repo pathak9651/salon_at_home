@@ -1,0 +1,119 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CLIENT
+  OWNER
+  ADMIN
+}
+
+enum BookingStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  CREATED
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  name      String?
+  phone     String    @unique
+  email     String?   @unique
+  password  String?
+  sessionVersion Int      @default(0)
+  role      UserRole  @default(CLIENT)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  salons    Salon[]
+  bookings  Booking[]
+  reviews   Review[]
+}
+
+model Salon {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  description String?
+  address     String
+  latitude    Float
+  longitude   Float
+  imageUrl    String?
+  isVerified  Boolean   @default(false)
+  ownerId     String    @db.ObjectId
+  owner       User      @relation(fields: [ownerId], references: [id])
+  services    Service[]
+  bookings    Booking[]
+  reviews     Review[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Service {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  description String?
+  price       Int
+  durationMin Int
+  salonId     String    @db.ObjectId
+  salon       Salon     @relation(fields: [salonId], references: [id])
+  bookings    Booking[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Booking {
+  id          String        @id @default(auto()) @map("_id") @db.ObjectId
+  scheduledAt DateTime
+  address     String
+  totalAmount Int
+  status      BookingStatus @default(PENDING)
+  clientId    String        @db.ObjectId
+  client      User          @relation(fields: [clientId], references: [id])
+  salonId     String        @db.ObjectId
+  salon       Salon         @relation(fields: [salonId], references: [id])
+  serviceId   String        @db.ObjectId
+  service     Service       @relation(fields: [serviceId], references: [id])
+  payment     Payment?
+  review      Review?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model Payment {
+  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  amount         Int
+  currency       String        @default("INR")
+  status         PaymentStatus @default(CREATED)
+  razorpayOrder  String?       @unique
+  razorpayPayment String?      @unique
+  bookingId      String        @unique @db.ObjectId
+  booking        Booking       @relation(fields: [bookingId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model Review {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  rating    Int
+  comment   String?
+  clientId  String   @db.ObjectId
+  client    User     @relation(fields: [clientId], references: [id])
+  salonId   String   @db.ObjectId
+  salon     Salon    @relation(fields: [salonId], references: [id])
+  bookingId String   @unique @db.ObjectId
+  booking   Booking  @relation(fields: [bookingId], references: [id])
+  createdAt DateTime @default(now())
+}

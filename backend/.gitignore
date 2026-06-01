@@ -1,0 +1,11 @@
+node_modules
+.env
+.env.local
+.expo
+.next
+dist
+coverage
+*.log
+backend/uploads/*
+!backend/uploads/.gitkeep
+.env.example
