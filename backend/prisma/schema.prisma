@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "mongodb"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -29,12 +29,17 @@ enum PaymentStatus {
 }
 
 model User {
-  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  id        String    @id @default(uuid())
   name      String?
   phone     String    @unique
   email     String?   @unique
   password  String?
   sessionVersion Int      @default(0)
+  emailVerified Boolean   @default(false)
+  verificationCodeHash String?
+  verificationExpiresAt DateTime?
+  resetCodeHash String?
+  resetExpiresAt DateTime?
   role      UserRole  @default(CLIENT)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -44,7 +49,7 @@ model User {
 }
 
 model Salon {
-  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  id          String    @id @default(uuid())
   name        String
   description String?
   address     String
@@ -52,7 +57,7 @@ model Salon {
   longitude   Float
   imageUrl    String?
   isVerified  Boolean   @default(false)
-  ownerId     String    @db.ObjectId
+  ownerId     String
   owner       User      @relation(fields: [ownerId], references: [id])
   services    Service[]
   bookings    Booking[]
@@ -62,12 +67,12 @@ model Salon {
 }
 
 model Service {
-  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  id          String    @id @default(uuid())
   name        String
   description String?
   price       Int
   durationMin Int
-  salonId     String    @db.ObjectId
+  salonId     String
   salon       Salon     @relation(fields: [salonId], references: [id])
   bookings    Booking[]
   createdAt   DateTime  @default(now())
@@ -75,16 +80,16 @@ model Service {
 }
 
 model Booking {
-  id          String        @id @default(auto()) @map("_id") @db.ObjectId
+  id          String        @id @default(uuid())
   scheduledAt DateTime
   address     String
   totalAmount Int
   status      BookingStatus @default(PENDING)
-  clientId    String        @db.ObjectId
+  clientId    String
   client      User          @relation(fields: [clientId], references: [id])
-  salonId     String        @db.ObjectId
+  salonId     String
   salon       Salon         @relation(fields: [salonId], references: [id])
-  serviceId   String        @db.ObjectId
+  serviceId   String
   service     Service       @relation(fields: [serviceId], references: [id])
   payment     Payment?
   review      Review?
@@ -93,27 +98,27 @@ model Booking {
 }
 
 model Payment {
-  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  id             String        @id @default(uuid())
   amount         Int
   currency       String        @default("INR")
   status         PaymentStatus @default(CREATED)
   razorpayOrder  String?       @unique
   razorpayPayment String?      @unique
-  bookingId      String        @unique @db.ObjectId
+  bookingId      String        @unique
   booking        Booking       @relation(fields: [bookingId], references: [id])
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 }
 
 model Review {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  id        String   @id @default(uuid())
   rating    Int
   comment   String?
-  clientId  String   @db.ObjectId
+  clientId  String
   client    User     @relation(fields: [clientId], references: [id])
-  salonId   String   @db.ObjectId
+  salonId   String
   salon     Salon    @relation(fields: [salonId], references: [id])
-  bookingId String   @unique @db.ObjectId
+  bookingId String   @unique
   booking   Booking  @relation(fields: [bookingId], references: [id])
   createdAt DateTime @default(now())
 }

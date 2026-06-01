@@ -34,10 +34,22 @@ router.post("/verify", asyncHandler(async (req, res) => {
     razorpaySignature: z.string(),
   }).parse(req.body);
   if (!env.RAZORPAY_KEY_SECRET) throw new HttpError(503, "Payment provider not configured");
+  const payment = await prisma.payment.findFirst({
+    where: {
+      bookingId: data.bookingId,
+      razorpayOrder: data.razorpayOrderId,
+      booking: { clientId: req.user!.id },
+    },
+  });
+  if (!payment) throw new HttpError(404, "Payment order not found");
   const expected = crypto.createHmac("sha256", env.RAZORPAY_KEY_SECRET)
     .update(`${data.razorpayOrderId}|${data.razorpayPaymentId}`)
     .digest("hex");
-  if (expected !== data.razorpaySignature) throw new HttpError(400, "Invalid payment signature");
+  const expectedBuffer = Buffer.from(expected, "hex");
+  const receivedBuffer = Buffer.from(data.razorpaySignature, "hex");
+  if (expectedBuffer.length !== receivedBuffer.length || !crypto.timingSafeEqual(expectedBuffer, receivedBuffer)) {
+    throw new HttpError(400, "Invalid payment signature");
+  }
   res.json(await prisma.payment.update({
     where: { bookingId: data.bookingId },
     data: { status: "PAID", razorpayPayment: data.razorpayPaymentId },
@@ -45,4 +57,3 @@ router.post("/verify", asyncHandler(async (req, res) => {
 }));
 
 export default router;
-

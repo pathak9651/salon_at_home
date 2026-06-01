@@ -1,19 +1,30 @@
 import { User, UserRole } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { env } from "../../config/env";
 import { prisma } from "../../config/prisma";
 import { requireAuth } from "../../middleware/auth.middleware";
+import { sendAuthCode } from "../../services/mail.service";
 import { asyncHandler } from "../../utils/async-handler";
 import { HttpError } from "../../utils/http-error";
 
 const router = Router();
-const otpStore = new Map<string, { code: string; expiresAt: number }>();
+const CODE_TTL_MS = 10 * 60 * 1000;
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 25, standardHeaders: true, legacyHeaders: false });
+const codeLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standardHeaders: true, legacyHeaders: false });
+const passwordSchema = z.string()
+  .min(8, "Password must be at least 8 characters")
+  .max(72, "Password must be 72 characters or less")
+  .regex(/[A-Za-z]/, "Password must include a letter")
+  .regex(/\d/, "Password must include a number");
+const emailSchema = z.string().trim().email().transform((email) => email.toLowerCase());
+const phoneSchema = z.string().trim().regex(/^\+?[0-9]{10,15}$/, "Phone must be 10 to 15 digits");
 
 function publicUser(user: User) {
-  const { password: _password, ...safeUser } = user;
+  const { password: _password, verificationCodeHash: _verification, resetCodeHash: _reset, ...safeUser } = user;
   return safeUser;
 }
 
@@ -24,78 +35,106 @@ function createToken(user: User) {
   });
 }
 
+function createCode() {
+  return env.OTP_BYPASS_CODE ?? String(Math.floor(100000 + Math.random() * 900000));
+}
+
+async function hashCode(code: string) {
+  return bcrypt.hash(code, 10);
+}
+
+function devCode(code: string) {
+  return env.OTP_BYPASS_CODE ? { devCode: code } : {};
+}
+
+router.use(["/signup", "/login"], authLimiter);
+router.use(["/verify-account", "/resend-verification", "/forgot-password", "/reset-password"], codeLimiter);
+
 router.post("/signup", asyncHandler(async (req, res) => {
   const data = z.object({
     name: z.string().trim().min(2).max(80),
-    email: z.string().trim().email().transform((email) => email.toLowerCase()),
-    phone: z.string().trim().min(10).max(15),
-    password: z.string().min(8).max(72),
+    email: emailSchema,
+    phone: phoneSchema,
+    password: passwordSchema,
     accountType: z.enum(["CLIENT", "MERCHANT"]),
   }).parse(req.body);
-
-  const existingUser = await prisma.user.findFirst({
-    where: { OR: [{ email: data.email }, { phone: data.phone }] },
-  });
+  const existingUser = await prisma.user.findFirst({ where: { OR: [{ email: data.email }, { phone: data.phone }] } });
   if (existingUser) throw new HttpError(409, "An account with this email or phone already exists");
 
-  const user = await prisma.user.create({
+  const code = createCode();
+  await prisma.user.create({
     data: {
       name: data.name,
       email: data.email,
       phone: data.phone,
       password: await bcrypt.hash(data.password, 12),
       role: data.accountType === "MERCHANT" ? UserRole.OWNER : UserRole.CLIENT,
+      verificationCodeHash: await hashCode(code),
+      verificationExpiresAt: new Date(Date.now() + CODE_TTL_MS),
     },
   });
-  res.status(201).json({ token: createToken(user), user: publicUser(user) });
+  await sendAuthCode(data.email, code, "verify");
+  res.status(201).json({ message: "Account created. Verify your email to continue.", email: data.email, ...devCode(code) });
+}));
+
+router.post("/verify-account", asyncHandler(async (req, res) => {
+  const data = z.object({ email: emailSchema, code: z.string().regex(/^\d{6}$/, "Code must be 6 digits") }).parse(req.body);
+  const user = await prisma.user.findUnique({ where: { email: data.email } });
+  if (!user?.verificationCodeHash || !user.verificationExpiresAt || user.verificationExpiresAt < new Date() || !(await bcrypt.compare(data.code, user.verificationCodeHash))) {
+    throw new HttpError(400, "Invalid or expired verification code");
+  }
+  const verifiedUser = await prisma.user.update({
+    where: { id: user.id },
+    data: { emailVerified: true, verificationCodeHash: null, verificationExpiresAt: null },
+  });
+  res.json({ token: createToken(verifiedUser), user: publicUser(verifiedUser) });
+}));
+
+router.post("/resend-verification", asyncHandler(async (req, res) => {
+  const { email } = z.object({ email: emailSchema }).parse(req.body);
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user || user.emailVerified) return res.json({ message: "If verification is required, a code has been sent." });
+  const code = createCode();
+  await prisma.user.update({ where: { id: user.id }, data: { verificationCodeHash: await hashCode(code), verificationExpiresAt: new Date(Date.now() + CODE_TTL_MS) } });
+  await sendAuthCode(email, code, "verify");
+  res.json({ message: "Verification code sent.", ...devCode(code) });
 }));
 
 router.post("/login", asyncHandler(async (req, res) => {
-  const data = z.object({
-    email: z.string().trim().email().transform((email) => email.toLowerCase()),
-    password: z.string().min(1),
-  }).parse(req.body);
-  const user = await prisma.user.findUnique({ where: { email: data.email } });
-  if (!user?.password || !(await bcrypt.compare(data.password, user.password))) {
-    throw new HttpError(401, "Invalid email or password");
+  const data = z.object({ identifier: z.string().trim().min(3), password: z.string().min(1) }).parse(req.body);
+  const identifier = data.identifier.toLowerCase();
+  const user = await prisma.user.findFirst({ where: { OR: [{ email: identifier }, { phone: data.identifier }] } });
+  if (!user?.password || !(await bcrypt.compare(data.password, user.password))) throw new HttpError(401, "Invalid email, phone, or password");
+  if (!user.emailVerified && user.role !== UserRole.ADMIN) {
+    return res.status(403).json({ error: "Verify your email before logging in", action: "VERIFY_ACCOUNT", email: user.email });
   }
   res.json({ token: createToken(user), user: publicUser(user) });
+}));
+
+router.post("/forgot-password", asyncHandler(async (req, res) => {
+  const { identifier } = z.object({ identifier: z.string().trim().min(3) }).parse(req.body);
+  const normalized = identifier.toLowerCase();
+  const user = await prisma.user.findFirst({ where: { OR: [{ email: normalized }, { phone: identifier }] } });
+  if (!user?.email) return res.json({ message: "If the account exists, a reset code has been sent." });
+  const code = createCode();
+  await prisma.user.update({ where: { id: user.id }, data: { resetCodeHash: await hashCode(code), resetExpiresAt: new Date(Date.now() + CODE_TTL_MS) } });
+  await sendAuthCode(user.email, code, "reset");
+  res.json({ message: "If the account exists, a reset code has been sent.", email: user.email, ...devCode(code) });
+}));
+
+router.post("/reset-password", asyncHandler(async (req, res) => {
+  const data = z.object({ email: emailSchema, code: z.string().regex(/^\d{6}$/, "Code must be 6 digits"), password: passwordSchema }).parse(req.body);
+  const user = await prisma.user.findUnique({ where: { email: data.email } });
+  if (!user?.resetCodeHash || !user.resetExpiresAt || user.resetExpiresAt < new Date() || !(await bcrypt.compare(data.code, user.resetCodeHash))) {
+    throw new HttpError(400, "Invalid or expired reset code");
+  }
+  await prisma.user.update({ where: { id: user.id }, data: { password: await bcrypt.hash(data.password, 12), resetCodeHash: null, resetExpiresAt: null, sessionVersion: { increment: 1 } } });
+  res.json({ message: "Password reset successful. You can log in now." });
 }));
 
 router.post("/logout", requireAuth, asyncHandler(async (req, res) => {
-  await prisma.user.update({
-    where: { id: req.user!.id },
-    data: { sessionVersion: { increment: 1 } },
-  });
+  await prisma.user.update({ where: { id: req.user!.id }, data: { sessionVersion: { increment: 1 } } });
   res.json({ message: "Logged out" });
-}));
-
-router.post("/request-otp", asyncHandler(async (req, res) => {
-  const { phone } = z.object({ phone: z.string().min(10).max(15) }).parse(req.body);
-  const code = env.OTP_BYPASS_CODE ?? String(Math.floor(100000 + Math.random() * 900000));
-  otpStore.set(phone, { code, expiresAt: Date.now() + 5 * 60 * 1000 });
-  res.json({ message: "OTP sent", ...(env.OTP_BYPASS_CODE && { devCode: code }) });
-}));
-
-router.post("/verify-otp", asyncHandler(async (req, res) => {
-  const { phone, code, name, role } = z.object({
-    phone: z.string().min(10).max(15),
-    code: z.string().length(6),
-    name: z.string().min(2).optional(),
-    role: z.enum(["CLIENT", "OWNER"]).default("CLIENT"),
-  }).parse(req.body);
-
-  const otp = otpStore.get(phone);
-  if (!otp || otp.expiresAt < Date.now() || otp.code !== code) {
-    throw new HttpError(400, "Invalid or expired OTP");
-  }
-  otpStore.delete(phone);
-  const user = await prisma.user.upsert({
-    where: { phone },
-    update: { ...(name && { name }) },
-    create: { phone, name, role },
-  });
-  res.json({ token: createToken(user), user: publicUser(user) });
 }));
 
 router.get("/me", requireAuth, asyncHandler(async (req, res) => {

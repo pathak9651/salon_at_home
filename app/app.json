@@ -6,13 +6,20 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "androidStatusBar": {
-      "hidden": true
+      "hidden": true,
+      "translucent": true,
+      "backgroundColor": "#06101a"
+    },
+    "androidNavigationBar": {
+      "visible": "sticky-immersive",
+      "backgroundColor": "#06101a"
     },
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#06101a"
       }

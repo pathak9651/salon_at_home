@@ -5,15 +5,6 @@ import { env } from "../src/config/env";
 const prisma = new PrismaClient();
 
 async function seedAdmin() {
-  await prisma.$runCommandRaw({
-    update: "User",
-    updates: [{
-      q: { sessionVersion: { $exists: false } },
-      u: { $set: { sessionVersion: 0 } },
-      multi: true,
-    }],
-  });
-
   const password = await bcrypt.hash(env.ADMIN_PASSWORD, 12);
   const admin = await prisma.user.upsert({
     where: { email: env.ADMIN_EMAIL.toLowerCase() },
@@ -21,6 +12,7 @@ async function seedAdmin() {
       name: env.ADMIN_NAME,
       phone: env.ADMIN_PHONE,
       password,
+      emailVerified: true,
       role: UserRole.ADMIN,
     },
     create: {
@@ -28,6 +20,7 @@ async function seedAdmin() {
       email: env.ADMIN_EMAIL.toLowerCase(),
       phone: env.ADMIN_PHONE,
       password,
+      emailVerified: true,
       role: UserRole.ADMIN,
     },
   });

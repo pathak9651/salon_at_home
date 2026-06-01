@@ -1,35 +1,63 @@
 # Salon At Home MVP
 
-A minimal startup scaffold with one Expo app and one Express backend.
+A startup-ready monorepo for at-home salon bookings with a dark sci-fi interface.
 
-## Structure
+## Workspace
 
 ```text
 salon-at-home/
-|-- app/       # Client, salon owner, and admin mobile interfaces
-`-- backend/   # API, auth, Prisma database, payments, and admin controls
+|-- app/          # Expo mobile app for clients and salon owners
+|-- backend/      # Express API, Prisma schema, and local PostgreSQL service
+|-- admin-panel/  # Next.js platform operations dashboard
+|-- database/     # Database setup notes
+`-- docs/         # Architecture documentation
 ```
 
-## Quick Start
+## Prerequisites
+
+- Node.js 20+
+- npm 10+
+- Docker Desktop, or an existing PostgreSQL database
+
+## Local Setup
 
 1. Copy `backend/.env.example` to `backend/.env`.
-2. Start MongoDB with `docker compose -f backend/docker-compose.yml up -d`.
-3. Run `npm install`.
-4. Run `npm run prisma:generate --workspace backend`.
-5. Run `npm run prisma:push --workspace backend`.
-6. Configure the admin values in `backend/.env`.
-7. Run `npm run seed:admin --workspace backend`.
-8. Start the API with `npm run dev:backend`.
-9. Start Expo with `npm run dev:app`.
+2. Copy `app/.env.example` to `app/.env` only when the automatic Expo API host is unsuitable.
+3. Copy `admin-panel/.env.example` to `admin-panel/.env.local` when the API is not running on `localhost:4000`.
+4. Start PostgreSQL:
 
-The API starts on `http://localhost:4000`. The Expo app routes authenticated users into client, merchant, or admin interfaces.
+   ```sh
+   docker compose -f backend/docker-compose.yml up -d
+   ```
 
-When using Expo Go on a physical phone, keep the phone and development computer on the same Wi-Fi network. The app resolves the Expo development host automatically. To override it, copy `app/.env.example` to `app/.env` and set `EXPO_PUBLIC_API_URL`.
+5. Install packages and initialize Prisma:
 
-## MongoDB
+   ```sh
+   npm install
+   npm run prisma:generate --workspace backend
+   npm run prisma:push --workspace backend
+   npm run seed:admin --workspace backend
+   ```
 
-The local Docker setup initializes a single-node MongoDB replica set because Prisma uses transactions for nested writes. For production, replace `DATABASE_URL` in `backend/.env` with your MongoDB Atlas connection string and keep the database name in the URL.
+6. Start each application in a separate terminal:
 
-## Authentication
+   ```sh
+   npm run dev:backend
+   npm run dev:app
+   npm run dev:admin
+   ```
 
-The Expo app supports client signup, merchant signup, login, secure device session storage, and logout. Merchants are stored with the backend `OWNER` role. Admin accounts cannot be created from the public app; use the idempotent `seed:admin` command after configuring `ADMIN_EMAIL`, `ADMIN_PHONE`, and `ADMIN_PASSWORD`.
+The API runs at `http://localhost:4000`, Expo prints its development URL, and the
+admin panel runs at `http://localhost:3000`.
+
+## Environment Notes
+
+- `OTP_BYPASS_CODE=123456` keeps local authentication setup simple. Remove it in production and configure SMTP.
+- Configure Razorpay keys before testing online payments.
+- Cloudinary and Google Maps keys are reserved in `backend/.env.example` for the upcoming image upload and location integrations.
+- Replace every example secret before deployment and serve production traffic over HTTPS.
+
+## Validation
+
+Run `npm run typecheck` for all workspaces and `npm run build` for production builds.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the MVP boundary.

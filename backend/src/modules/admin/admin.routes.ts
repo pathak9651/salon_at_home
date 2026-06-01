@@ -18,7 +18,10 @@ router.get("/overview", asyncHandler(async (_req, res) => {
 }));
 
 router.get("/users", asyncHandler(async (_req, res) => {
-  res.json(await prisma.user.findMany({ orderBy: { createdAt: "desc" } }));
+  res.json(await prisma.user.findMany({
+    select: { id: true, name: true, phone: true, email: true, emailVerified: true, role: true, createdAt: true, updatedAt: true },
+    orderBy: { createdAt: "desc" },
+  }));
 }));
 
 router.get("/bookings", asyncHandler(async (_req, res) => {
@@ -26,4 +29,3 @@ router.get("/bookings", asyncHandler(async (_req, res) => {
 }));
 
 export default router;
-

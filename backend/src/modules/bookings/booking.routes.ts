@@ -2,12 +2,14 @@ import { BookingStatus, UserRole } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../../config/prisma";
-import { requireAuth } from "../../middleware/auth.middleware";
+import { requireAuth, requireRole } from "../../middleware/auth.middleware";
 import { asyncHandler } from "../../utils/async-handler";
 import { HttpError } from "../../utils/http-error";
 
 const router = Router();
 router.use(requireAuth);
+
+const cancellableByClientStatuses: BookingStatus[] = [BookingStatus.PENDING, BookingStatus.ACCEPTED];
 
 router.get("/", asyncHandler(async (req, res) => {
   const where = req.user!.role === UserRole.OWNER
@@ -20,7 +22,7 @@ router.get("/", asyncHandler(async (req, res) => {
   }));
 }));
 
-router.post("/", asyncHandler(async (req, res) => {
+router.post("/", requireRole(UserRole.CLIENT), asyncHandler(async (req, res) => {
   const data = z.object({
     salonId: z.string(),
     serviceId: z.string(),
@@ -44,6 +46,19 @@ router.patch("/:id/status", asyncHandler(async (req, res) => {
   const isOwner = booking.salon.ownerId === req.user!.id;
   const isClientCancelling = booking.clientId === req.user!.id && status === BookingStatus.CANCELLED;
   if (!isOwner && !isClientCancelling) throw new HttpError(403, "Status change not allowed");
+  const allowedOwnerTransitions: Record<BookingStatus, BookingStatus[]> = {
+    PENDING: [BookingStatus.ACCEPTED, BookingStatus.REJECTED],
+    ACCEPTED: [BookingStatus.COMPLETED, BookingStatus.CANCELLED],
+    REJECTED: [],
+    COMPLETED: [],
+    CANCELLED: [],
+  };
+  if (isOwner && !allowedOwnerTransitions[booking.status].includes(status)) {
+    throw new HttpError(400, `Cannot change booking from ${booking.status} to ${status}`);
+  }
+  if (isClientCancelling && !cancellableByClientStatuses.includes(booking.status)) {
+    throw new HttpError(400, `Cannot cancel a ${booking.status.toLowerCase()} booking`);
+  }
   res.json(await prisma.booking.update({ where: { id: booking.id }, data: { status } }));
 }));
 

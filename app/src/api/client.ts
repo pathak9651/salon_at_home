@@ -13,6 +13,20 @@ function getApiUrl() {
 
 const API_URL = getApiUrl();
 
+export class ApiError extends Error {
+  status: number;
+  action?: string;
+  email?: string;
+
+  constructor(message: string, status: number, body?: { action?: string; email?: string }) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.action = body?.action;
+    this.email = body?.email;
+  }
+}
+
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
@@ -24,8 +38,8 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
     throw new Error(`Cannot reach the API at ${API_URL}. Check that the backend is running and the device is on the same network.`);
   }
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string } | null;
-    throw new Error(body?.error ?? "Something went wrong. Please try again.");
+    const body = await response.json().catch(() => null) as { error?: string; action?: string; email?: string } | null;
+    throw new ApiError(body?.error ?? "Something went wrong. Please try again.", response.status, body ?? undefined);
   }
   return response.json() as Promise<T>;
 }

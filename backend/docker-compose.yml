@@ -1,37 +1,19 @@
 services:
-  mongodb:
-    image: mongo:8
-    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: salon_at_home
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
     ports:
-      - "27017:27017"
+      - "5432:5432"
     volumes:
-      - salon_at_home_data:/data/db
+      - salon_at_home_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d salon_at_home"]
       interval: 5s
       timeout: 5s
       retries: 10
-
-  mongodb-setup:
-    image: mongo:8
-    depends_on:
-      mongodb:
-        condition: service_healthy
-    restart: "no"
-    entrypoint:
-      - bash
-      - -c
-      - |
-        mongosh --host mongodb:27017 --eval '
-          try {
-            rs.status()
-          } catch (error) {
-            rs.initiate({
-              _id: "rs0",
-              members: [{ _id: 0, host: "localhost:27017" }]
-            })
-          }
-        '
 
 volumes:
   salon_at_home_data:

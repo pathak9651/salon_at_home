@@ -1,8 +1,8 @@
 import * as SecureStore from "expo-secure-store";
 import * as NavigationBar from "expo-navigation-bar";
-import { StatusBar } from "expo-status-bar";
+import { StatusBar as ExpoStatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Platform, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, AppState, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { apiRequest } from "./api/client";
 import { AdminHomeScreen } from "./screens/admin/AdminHomeScreen";
 import { AuthScreen } from "./screens/auth/AuthScreen";
@@ -18,6 +18,13 @@ export type AuthSession = { token: string; user: SessionUser };
 const TOKEN_KEY = "salon_at_home_token";
 type Tab = "home" | "profile";
 
+async function blockSystemBars() {
+  StatusBar.setHidden(true, "fade");
+  if (Platform.OS === "android") {
+    await NavigationBar.setVisibilityAsync("hidden");
+  }
+}
+
 export default function App() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
@@ -25,10 +32,13 @@ export default function App() {
 
   useEffect(() => {
     void restoreSession();
-    if (Platform.OS === "android") {
-      void NavigationBar.setVisibilityAsync("hidden");
-      void NavigationBar.setBehaviorAsync("overlay-swipe");
-    }
+    void blockSystemBars();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void blockSystemBars();
+    });
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   async function restoreSession() {
@@ -60,16 +70,16 @@ export default function App() {
   }
 
   if (loading) {
-    return <SafeAreaView style={styles.loading}><StatusBar hidden /><ActivityIndicator color={colors.cyan} /></SafeAreaView>;
+    return <View style={styles.loading} onTouchStart={() => void blockSystemBars()}><ExpoStatusBar hidden /><ActivityIndicator color={colors.cyan} /></View>;
   }
 
   if (!session) {
-    return <SafeAreaView style={styles.safe}><StatusBar hidden /><AuthScreen onAuthenticated={handleAuthenticated} /></SafeAreaView>;
+    return <View style={styles.safe} onTouchStart={() => void blockSystemBars()}><ExpoStatusBar hidden /><AuthScreen onAuthenticated={handleAuthenticated} /></View>;
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar hidden />
+    <View style={styles.safe} onTouchStart={() => void blockSystemBars()}>
+      <ExpoStatusBar hidden />
       <View style={styles.sessionBar}>
         <Text style={styles.identity}>{session.user.name ?? session.user.email ?? session.user.phone}</Text>
         <Text style={styles.role}>{session.user.role === "OWNER" ? "MERCHANT" : session.user.role}</Text>
@@ -84,7 +94,7 @@ export default function App() {
         <TabButton label="HOME" active={tab === "home"} onPress={() => setTab("home")} />
         <TabButton label="PROFILE" active={tab === "profile"} onPress={() => setTab("profile")} />
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

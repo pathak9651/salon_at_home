@@ -3,13 +3,15 @@
   "private": true,
   "workspaces": [
     "backend",
-    "app"
+    "app",
+    "admin-panel"
   ],
   "scripts": {
     "dev:backend": "npm run dev --workspace backend",
     "dev:app": "npm run start --workspace app",
-    "build": "npm run build --workspace backend",
-    "typecheck": "npm run typecheck --workspace backend && npm run typecheck --workspace app"
+    "dev:admin": "npm run dev --workspace admin-panel",
+    "build": "npm run build --workspace backend && npm run build --workspace admin-panel",
+    "typecheck": "npm run typecheck --workspace backend && npm run typecheck --workspace app && npm run typecheck --workspace admin-panel"
   },
   "dependencies": {
     "react": "19.1.0",
