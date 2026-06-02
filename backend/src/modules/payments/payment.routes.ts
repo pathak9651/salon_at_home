@@ -6,6 +6,7 @@ import { z } from "zod";
 import { env } from "../../config/env";
 import { prisma } from "../../config/prisma";
 import { requireAuth } from "../../middleware/auth.middleware";
+import { sendPaymentInvoiceEmail } from "../../services/mail.service";
 import { createNotifications } from "../notifications/notification.service";
 import { asyncHandler } from "../../utils/async-handler";
 import { HttpError } from "../../utils/http-error";
@@ -165,6 +166,28 @@ router.post("/verify", asyncHandler(async (req, res) => {
     ], tx);
     return updated;
   });
+  if (paidPayment.booking.client.email) {
+    const serviceNames = paidPayment.booking.services.length
+      ? paidPayment.booking.services.map((item) => item.service.name)
+      : [paidPayment.booking.service.name];
+    sendPaymentInvoiceEmail({
+      to: paidPayment.booking.client.email,
+      clientName: paidPayment.booking.client.name,
+      invoiceNumber: paidPayment.invoiceNumber,
+      paidAt: paidPayment.paidAt,
+      amount: paidPayment.amount,
+      currency: paidPayment.currency,
+      method: paidPayment.method,
+      razorpayPayment: paidPayment.razorpayPayment,
+      bookingId: paidPayment.bookingId,
+      salonName: paidPayment.booking.salon.name,
+      serviceNames,
+      scheduledFor: paidPayment.booking.scheduledAt,
+      serviceAddress: paidPayment.booking.address,
+    }).catch((error: unknown) => {
+      console.error("Payment invoice email failed", error);
+    });
+  }
   res.json(paidPayment);
 }));
 

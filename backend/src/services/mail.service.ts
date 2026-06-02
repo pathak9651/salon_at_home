@@ -26,3 +26,85 @@ export async function sendAuthCode(email: string, code: string, purpose: "verify
     html: `<p>Your Salon At Home ${isVerification ? "verification" : "password reset"} code is:</p><h2>${code}</h2><p>This code expires in 10 minutes.</p>`,
   });
 }
+
+type InvoiceEmailData = {
+  to: string;
+  clientName?: string | null;
+  invoiceNumber?: string | null;
+  paidAt?: Date | string | null;
+  amount: number;
+  currency: string;
+  method?: string | null;
+  razorpayPayment?: string | null;
+  bookingId: string;
+  salonName: string;
+  serviceNames: string[];
+  scheduledFor: Date | string;
+  serviceAddress: string;
+};
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function formatDate(value?: Date | string | null) {
+  if (!value) return "N/A";
+  return new Date(value).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+}
+
+export async function sendPaymentInvoiceEmail(invoice: InvoiceEmailData) {
+  if (!transporter) return false;
+
+  const serviceList = invoice.serviceNames.length ? invoice.serviceNames.join(", ") : "Salon service";
+  const subject = `Salon At Home invoice ${invoice.invoiceNumber ?? invoice.bookingId.slice(0, 8).toUpperCase()}`;
+  const text = [
+    `Hi ${invoice.clientName ?? "there"},`,
+    "",
+    "Your online payment was successful. Here is your invoice summary:",
+    `Invoice: ${invoice.invoiceNumber ?? "N/A"}`,
+    `Paid at: ${formatDate(invoice.paidAt)}`,
+    `Salon: ${invoice.salonName}`,
+    `Services: ${serviceList}`,
+    `Scheduled for: ${formatDate(invoice.scheduledFor)}`,
+    `Service address: ${invoice.serviceAddress}`,
+    `Amount: ${invoice.currency} ${invoice.amount}`,
+    `Payment method: ${invoice.method ?? "ONLINE"}`,
+    invoice.razorpayPayment ? `Razorpay payment ID: ${invoice.razorpayPayment}` : "",
+    "",
+    "Thank you for using Salon At Home.",
+  ].filter(Boolean).join("\n");
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5">
+      <h2 style="margin:0 0 12px">Payment invoice</h2>
+      <p>Hi ${escapeHtml(invoice.clientName ?? "there")}, your online payment was successful.</p>
+      <table style="border-collapse:collapse;width:100%;max-width:620px">
+        <tbody>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb">Invoice</td><td style="padding:8px;border:1px solid #e5e7eb"><strong>${escapeHtml(invoice.invoiceNumber ?? "N/A")}</strong></td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb">Paid at</td><td style="padding:8px;border:1px solid #e5e7eb">${escapeHtml(formatDate(invoice.paidAt))}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb">Salon</td><td style="padding:8px;border:1px solid #e5e7eb">${escapeHtml(invoice.salonName)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb">Services</td><td style="padding:8px;border:1px solid #e5e7eb">${escapeHtml(serviceList)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb">Scheduled for</td><td style="padding:8px;border:1px solid #e5e7eb">${escapeHtml(formatDate(invoice.scheduledFor))}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb">Address</td><td style="padding:8px;border:1px solid #e5e7eb">${escapeHtml(invoice.serviceAddress)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb">Amount</td><td style="padding:8px;border:1px solid #e5e7eb"><strong>${escapeHtml(invoice.currency)} ${invoice.amount}</strong></td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb">Method</td><td style="padding:8px;border:1px solid #e5e7eb">${escapeHtml(invoice.method ?? "ONLINE")}</td></tr>
+          ${invoice.razorpayPayment ? `<tr><td style="padding:8px;border:1px solid #e5e7eb">Razorpay payment ID</td><td style="padding:8px;border:1px solid #e5e7eb">${escapeHtml(invoice.razorpayPayment)}</td></tr>` : ""}
+        </tbody>
+      </table>
+      <p style="margin-top:16px">Thank you for using Salon At Home.</p>
+    </div>
+  `;
+
+  await transporter.sendMail({
+    from: env.SMTP_FROM,
+    to: invoice.to,
+    subject,
+    text,
+    html,
+  });
+  return true;
+}
