@@ -44,6 +44,12 @@ enum SalonStatus {
   REJECTED
 }
 
+enum DisputeStatus {
+  NONE
+  OPEN
+  RESOLVED
+}
+
 enum NotificationType {
   BOOKING_CREATED
   BOOKING_ACCEPTED
@@ -165,6 +171,9 @@ model Booking {
   instructions String?
   totalAmount Int
   status      BookingStatus @default(PENDING)
+  disputeStatus DisputeStatus @default(NONE)
+  disputeNote String?
+  disputeResolvedAt DateTime?
   clientId    String
   client      User          @relation(fields: [clientId], references: [id])
   salonId     String

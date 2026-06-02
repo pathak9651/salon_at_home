@@ -15,23 +15,6 @@ type Overview = {
   cashPayments: number;
 };
 
-type Payment = {
-  id: string;
-  amount: number;
-  status: string;
-  method?: string | null;
-  invoiceNumber?: string | null;
-  cashRemark?: string | null;
-  paidAt?: string | null;
-  platformFee: number;
-  merchantAmount: number;
-  booking?: {
-    id: string;
-    client?: { name?: string | null; phone: string } | null;
-    salon?: { name: string; owner?: { name?: string | null; phone: string } };
-  };
-};
-
 type AdminUser = {
   id: string;
   name?: string | null;
@@ -63,7 +46,6 @@ export function AdminHomeScreen({ token }: { token: string }) {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const [overview, setOverview] = useState<Overview | null>(null);
-  const [payments, setPayments] = useState<Payment[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [salons, setSalons] = useState<AdminSalon[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,7 +61,6 @@ export function AdminHomeScreen({ token }: { token: string }) {
     setError("");
     try {
       setOverview(await apiRequest<Overview>("/admin/overview", { headers: { Authorization: `Bearer ${token}` } }));
-      setPayments(await apiRequest<Payment[]>("/admin/payments", { headers: { Authorization: `Bearer ${token}` } }));
       setUsers(await apiRequest<AdminUser[]>("/admin/users", { headers: { Authorization: `Bearer ${token}` } }));
       setSalons(await apiRequest<AdminSalon[]>("/admin/salons", { headers: { Authorization: `Bearer ${token}` } }));
     } catch (loadError) {
@@ -223,18 +204,6 @@ export function AdminHomeScreen({ token }: { token: string }) {
         </View>
       )) : <Text style={styles.empty}>No salons found.</Text>}
 
-      <Text style={styles.section}>CLOSED REQUESTS</Text>
-      {payments.length ? payments.map((payment) => (
-        <View style={styles.row} key={payment.id}>
-          <Text style={styles.dot}>+</Text>
-          <View style={styles.copy}>
-            <Text style={styles.title}>{payment.method ?? "ONLINE"} | {payment.invoiceNumber ?? payment.id.slice(0, 8).toUpperCase()}</Text>
-            <Text style={styles.detail}>{payment.booking?.salon?.name ?? "Salon"} | Client {payment.booking?.client?.name ?? payment.booking?.client?.phone ?? "N/A"}</Text>
-            <Text style={styles.detail}>Amount INR {payment.amount} | Brokerage INR {payment.platformFee} | Merchant INR {payment.merchantAmount}</Text>
-            {payment.cashRemark ? <Text style={styles.cashRemark}>Cash remark: {payment.cashRemark}</Text> : null}
-          </View>
-        </View>
-      )) : <Text style={styles.empty}>No closed payment requests yet.</Text>}
     </ScrollView>
   );
 }

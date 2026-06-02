@@ -4,6 +4,7 @@ import { StatusBar as ExpoStatusBar } from "expo-status-bar";
 import { ComponentProps, useEffect, useState } from "react";
 import { ActivityIndicator, Platform, SafeAreaView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { apiRequest } from "./api/client";
+import { AdminBookingsScreen } from "./screens/admin/AdminBookingsScreen";
 import { AdminHomeScreen } from "./screens/admin/AdminHomeScreen";
 import { AuthScreen } from "./screens/auth/AuthScreen";
 import { MyBookingsScreen } from "./screens/bookings/MyBookingsScreen";
@@ -121,7 +122,8 @@ function AppContent() {
       </View>
       <View style={styles.content}>
         {tab === "profile" && <ProfileScreen token={session.token} user={session.user} onLogout={handleLogout} onUserUpdated={handleUserUpdated} />}
-        {tab === "bookings" && <MyBookingsScreen token={session.token} />}
+        {tab === "bookings" && session.user.role === "ADMIN" && <AdminBookingsScreen token={session.token} />}
+        {tab === "bookings" && session.user.role !== "ADMIN" && <MyBookingsScreen token={session.token} />}
         {tab === "notifications" && <NotificationsScreen token={session.token} onUnreadChanged={setUnreadNotifications} />}
         {tab === "home" && session.user.role === "CLIENT" && <ClientHomeScreen token={session.token} onBookingCompleted={() => { void refreshUnreadCount(); setTab("bookings"); }} />}
         {tab === "home" && session.user.role === "OWNER" && <OwnerHomeScreen token={session.token} />}
@@ -133,7 +135,7 @@ function AppContent() {
         <TabButton icon="home" inactiveIcon="home-outline" label="Home" active={tab === "home"} onPress={() => setTab("home")} />
         {session.user.role === "OWNER" && <TabButton icon="storefront" inactiveIcon="storefront-outline" label="Salon setup" active={tab === "salon"} onPress={() => setTab("salon")} />}
         {session.user.role === "OWNER" && <TabButton icon="wallet" inactiveIcon="wallet-outline" label="Earnings" active={tab === "earnings"} onPress={() => setTab("earnings")} />}
-        {session.user.role !== "OWNER" && <TabButton icon="calendar" inactiveIcon="calendar-outline" label="My bookings" active={tab === "bookings"} onPress={() => setTab("bookings")} />}
+        {session.user.role !== "OWNER" && <TabButton icon={session.user.role === "ADMIN" ? "clipboard" : "calendar"} inactiveIcon={session.user.role === "ADMIN" ? "clipboard-outline" : "calendar-outline"} label={session.user.role === "ADMIN" ? "Booking management" : "My bookings"} active={tab === "bookings"} onPress={() => setTab("bookings")} />}
         <TabButton icon="person" inactiveIcon="person-outline" label="Profile" active={tab === "profile"} onPress={() => setTab("profile")} />
       </View>
     </SafeAreaView>

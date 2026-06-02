@@ -1,4 +1,4 @@
-import { SalonStatus, UserRole } from "@prisma/client";
+import { DisputeStatus, SalonStatus, UserRole } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../../config/prisma";
@@ -139,7 +139,44 @@ router.delete("/users/:id", asyncHandler(async (req, res) => {
 }));
 
 router.get("/bookings", asyncHandler(async (_req, res) => {
-  res.json(await prisma.booking.findMany({ include: { client: true, salon: true, payment: true }, orderBy: { createdAt: "desc" } }));
+  res.json(await prisma.booking.findMany({
+    include: {
+      client: { select: { id: true, name: true, phone: true, email: true, isSuspended: true } },
+      salon: { include: { owner: { select: { id: true, name: true, phone: true, email: true, isSuspended: true } } } },
+      employee: true,
+      service: true,
+      services: { include: { service: true } },
+      payment: true,
+      review: true,
+    },
+    orderBy: { createdAt: "desc" },
+  }));
+}));
+
+router.patch("/bookings/:id/dispute", asyncHandler(async (req, res) => {
+  const data = z.object({
+    disputeStatus: z.nativeEnum(DisputeStatus),
+    disputeNote: z.string().trim().max(500).optional().or(z.literal("")),
+  }).parse(req.body);
+  const booking = await prisma.booking.findUnique({ where: { id: String(req.params.id) } });
+  if (!booking) throw new HttpError(404, "Booking not found");
+  res.json(await prisma.booking.update({
+    where: { id: booking.id },
+    data: {
+      disputeStatus: data.disputeStatus,
+      disputeNote: data.disputeNote || null,
+      disputeResolvedAt: data.disputeStatus === "RESOLVED" ? new Date() : null,
+    },
+    include: {
+      client: { select: { id: true, name: true, phone: true, email: true, isSuspended: true } },
+      salon: { include: { owner: { select: { id: true, name: true, phone: true, email: true, isSuspended: true } } } },
+      employee: true,
+      service: true,
+      services: { include: { service: true } },
+      payment: true,
+      review: true,
+    },
+  }));
 }));
 
 router.get("/payments", asyncHandler(async (_req, res) => {
