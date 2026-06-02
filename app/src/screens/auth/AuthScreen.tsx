@@ -2,13 +2,15 @@ import { useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { ApiError, apiRequest } from "../../api/client";
 import { AuthSession } from "../../App";
-import { colors } from "../../utils/theme";
+import { ThemeColors, useTheme } from "../../utils/theme";
 
 type Mode = "login" | "signup" | "verify" | "forgot" | "reset";
 type AccountType = "CLIENT" | "MERCHANT";
 type MessageResponse = { message: string; email?: string; devCode?: string };
 
 export function AuthScreen({ onAuthenticated }: { onAuthenticated: (session: AuthSession) => Promise<void> }) {
+  const { colors } = useTheme();
+  const styles = createStyles(colors);
   const [mode, setMode] = useState<Mode>("login");
   const [accountType, setAccountType] = useState<AccountType>("CLIENT");
   const [name, setName] = useState("");
@@ -120,7 +122,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (session: Aut
         {!!notice && <Text style={styles.notice}>{notice}</Text>}
         {!!error && <Text style={styles.error}>{error}</Text>}
         <TouchableOpacity disabled={loading} onPress={() => void submit()} style={styles.primary}>
-          {loading ? <ActivityIndicator color="#00202a" /> : <Text style={styles.primaryText}>{actions[mode]}</Text>}
+          {loading ? <ActivityIndicator color={colors.buttonText} /> : <Text style={styles.primaryText}>{actions[mode]}</Text>}
         </TouchableOpacity>
 
         {mode === "login" && <TouchableOpacity onPress={() => changeMode("forgot")}><Text style={styles.link}>FORGOT PASSWORD?</Text></TouchableOpacity>}
@@ -138,14 +140,20 @@ const subtitles: Record<Mode, string> = { login: "Use your email or phone number
 const actions: Record<Mode, string> = { login: "LOGIN", signup: "CREATE ACCOUNT", verify: "VERIFY ACCOUNT", forgot: "SEND RESET CODE", reset: "RESET PASSWORD" };
 
 function Tab({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  const { colors } = useTheme();
+  const styles = createStyles(colors);
   return <TouchableOpacity onPress={onPress} style={[styles.tab, active && styles.tabActive]}><Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text></TouchableOpacity>;
 }
 
 function Field(props: React.ComponentProps<typeof TextInput> & { label: string }) {
   const { label, ...inputProps } = props;
-  return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput {...inputProps} placeholderTextColor="#54717d" style={styles.input} /></View>;
+  const { colors } = useTheme();
+  const styles = createStyles(colors);
+  return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput {...inputProps} placeholderTextColor={colors.placeholder} style={styles.input} /></View>;
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1 }, page: { flexGrow: 1, justifyContent: "center", padding: 24 }, eyebrow: { color: colors.cyan, fontSize: 9, letterSpacing: 1.8 }, title: { color: colors.text, fontSize: 32, fontWeight: "800", marginTop: 10 }, subtitle: { color: colors.muted, fontSize: 13, lineHeight: 20, marginTop: 7, marginBottom: 22 }, tabs: { flexDirection: "row", borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel }, accountTypes: { flexDirection: "row", gap: 10, marginTop: 14, marginBottom: 4 }, tab: { flex: 1, alignItems: "center", padding: 13, borderWidth: 1, borderColor: "transparent" }, tabActive: { borderColor: colors.cyan, backgroundColor: "#0c2c38" }, tabText: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 1.2 }, tabTextActive: { color: colors.cyan }, field: { marginTop: 15 }, label: { color: colors.amber, fontSize: 9, fontWeight: "800", letterSpacing: 1.2, marginBottom: 7 }, input: { color: colors.text, padding: 13, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, fontSize: 13 }, notice: { color: colors.green, fontSize: 11, lineHeight: 17, marginTop: 14 }, error: { color: "#ff7b73", fontSize: 11, marginTop: 14 }, primary: { alignItems: "center", justifyContent: "center", minHeight: 44, marginTop: 18, padding: 12, backgroundColor: colors.cyan }, primaryText: { color: "#00202a", fontWeight: "900", fontSize: 10, letterSpacing: 1.2 }, link: { color: colors.cyan, textAlign: "center", fontSize: 10, fontWeight: "800", letterSpacing: 1, marginTop: 17 }, note: { color: colors.muted, textAlign: "center", fontSize: 10, marginTop: 16 },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    flex: { flex: 1 }, page: { flexGrow: 1, justifyContent: "center", padding: 24 }, eyebrow: { color: colors.cyan, fontSize: 9, letterSpacing: 1.8 }, title: { color: colors.text, fontSize: 32, fontWeight: "800", marginTop: 10 }, subtitle: { color: colors.muted, fontSize: 13, lineHeight: 20, marginTop: 7, marginBottom: 22 }, tabs: { flexDirection: "row", borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel }, accountTypes: { flexDirection: "row", gap: 10, marginTop: 14, marginBottom: 4 }, tab: { flex: 1, alignItems: "center", padding: 13, borderWidth: 1, borderColor: "transparent" }, tabActive: { borderColor: colors.cyan, backgroundColor: colors.activePanel }, tabText: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 1.2 }, tabTextActive: { color: colors.cyan }, field: { marginTop: 15 }, label: { color: colors.amber, fontSize: 9, fontWeight: "800", letterSpacing: 1.2, marginBottom: 7 }, input: { color: colors.text, padding: 13, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, fontSize: 13 }, notice: { color: colors.green, fontSize: 11, lineHeight: 17, marginTop: 14 }, error: { color: colors.danger, fontSize: 11, marginTop: 14 }, primary: { alignItems: "center", justifyContent: "center", minHeight: 44, marginTop: 18, padding: 12, backgroundColor: colors.cyan }, primaryText: { color: colors.buttonText, fontWeight: "900", fontSize: 10, letterSpacing: 1.2 }, link: { color: colors.cyan, textAlign: "center", fontSize: 10, fontWeight: "800", letterSpacing: 1, marginTop: 17 }, note: { color: colors.muted, textAlign: "center", fontSize: 10, marginTop: 16 },
+  });
+}

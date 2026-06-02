@@ -4,15 +4,12 @@
     "slug": "salon-at-home",
     "version": "0.1.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "androidStatusBar": {
-      "hidden": true,
-      "translucent": true,
-      "backgroundColor": "#06101a"
-    },
-    "androidNavigationBar": {
-      "visible": "sticky-immersive",
-      "backgroundColor": "#06101a"
+      "hidden": false,
+      "translucent": false,
+      "backgroundColor": "#06101a",
+      "barStyle": "light-content"
     },
     "newArchEnabled": true,
     "ios": {

@@ -2,7 +2,7 @@ import * as Location from "expo-location";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { apiRequest } from "../../api/client";
-import { colors } from "../../utils/theme";
+import { ThemeColors, useTheme } from "../../utils/theme";
 import { ScreenHeader } from "../common/ScreenHeader";
 
 type Coordinates = {
@@ -26,6 +26,8 @@ type Salon = {
 const services = [["CUT", "Haircut", "From INR 499"], ["SPA", "Hair spa", "From INR 999"], ["SKN", "Skin care", "From INR 799"], ["BRD", "Grooming", "From INR 399"]];
 
 export function ClientHomeScreen() {
+  const { colors } = useTheme();
+  const styles = createStyles(colors);
   const [location, setLocation] = useState<Coordinates | null>(null);
   const [area, setArea] = useState("Detect your location");
   const [salons, setSalons] = useState<Salon[]>([]);
@@ -95,7 +97,7 @@ export function ClientHomeScreen() {
           <Text style={styles.locationText}>{area}</Text>
         </View>
         <TouchableOpacity disabled={loadingLocation} onPress={() => void detectLocation()} style={styles.detectButton}>
-          {loadingLocation ? <ActivityIndicator color="#00202a" /> : <Text style={styles.detectText}>DETECT</Text>}
+          {loadingLocation ? <ActivityIndicator color={colors.buttonText} /> : <Text style={styles.detectText}>DETECT</Text>}
         </TouchableOpacity>
       </View>
 
@@ -139,19 +141,20 @@ function serviceText(salon: Salon) {
   return `${salon.services.slice(0, 2).map((service) => service.name).join(", ")} | From INR ${cheapest}`;
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   page: { padding: 20, paddingBottom: 28 },
   location: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, padding: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
   online: { color: colors.green, fontSize: 9, fontWeight: "800", letterSpacing: 1 },
   locationText: { color: colors.text, fontSize: 12, marginTop: 5 },
   detectButton: { minWidth: 76, alignItems: "center", justifyContent: "center", padding: 10, backgroundColor: colors.cyan },
-  detectText: { color: "#00202a", fontSize: 9, fontWeight: "900", letterSpacing: 1 },
-  hero: { marginTop: 14, padding: 18, borderWidth: 1, borderColor: "#205063", backgroundColor: colors.panelRaised },
+  detectText: { color: colors.buttonText, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
+  hero: { marginTop: 14, padding: 18, borderWidth: 1, borderColor: colors.heroBorder, backgroundColor: colors.panelRaised },
   heroTag: { color: colors.amber, fontSize: 9, letterSpacing: 1.8 },
   heroTitle: { color: colors.text, fontSize: 26, lineHeight: 32, fontWeight: "700", marginVertical: 14 },
   primary: { alignSelf: "flex-start", backgroundColor: colors.cyan, padding: 11 },
-  primaryText: { color: "#00202a", fontSize: 10, fontWeight: "800", letterSpacing: 1 },
-  error: { color: "#ff7b73", fontSize: 11, marginTop: 14 },
+  primaryText: { color: colors.buttonText, fontSize: 10, fontWeight: "800", letterSpacing: 1 },
+  error: { color: colors.danger, fontSize: 11, marginTop: 14 },
   section: { color: colors.text, fontWeight: "700", fontSize: 12, letterSpacing: 1.5, marginTop: 24, marginBottom: 10 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   service: { width: "48%", padding: 13, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
@@ -165,4 +168,5 @@ const styles = StyleSheet.create({
   mapBadge: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan },
   mapText: { color: colors.cyan, fontSize: 9, fontWeight: "900" },
   empty: { color: colors.muted, fontSize: 12, lineHeight: 18 },
-});
+  });
+}

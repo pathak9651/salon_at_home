@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SessionUser } from "../../App";
 import { API_URL, apiAssetUrl, apiRequest } from "../../api/client";
-import { colors } from "../../utils/theme";
+import { ThemeColors, useTheme } from "../../utils/theme";
 
 type Address = {
   id: string;
@@ -45,6 +45,8 @@ export function ProfileScreen({
   onLogout: () => Promise<void>;
   onUserUpdated: (user: SessionUser) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = createStyles(colors);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [name, setName] = useState(user.name ?? "");
@@ -251,7 +253,7 @@ export function ProfileScreen({
         <Field label="PHONE NUMBER" value={phone} onChangeText={setPhone} placeholder="9876543210" keyboardType="phone-pad" />
         <ProfileRow label="ACCOUNT TYPE" value={displayRole} highlight />
         <TouchableOpacity disabled={saving} onPress={() => void savePersonalInfo()} style={styles.primary}>
-          {saving ? <ActivityIndicator color="#00202a" /> : <Text style={styles.primaryText}>SAVE PERSONAL INFO</Text>}
+          {saving ? <ActivityIndicator color={colors.buttonText} /> : <Text style={styles.primaryText}>SAVE PERSONAL INFO</Text>}
         </TouchableOpacity>
 
         <Text style={styles.section}>SAVED ADDRESSES</Text>
@@ -319,20 +321,25 @@ export function ProfileScreen({
 
 function Field(props: React.ComponentProps<typeof TextInput> & { label: string }) {
   const { label, ...inputProps } = props;
-  return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput {...inputProps} placeholderTextColor="#54717d" style={styles.input} /></View>;
+  const { colors } = useTheme();
+  const styles = createStyles(colors);
+  return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput {...inputProps} placeholderTextColor={colors.placeholder} style={styles.input} /></View>;
 }
 
 function ProfileRow({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
+  const { colors } = useTheme();
+  const styles = createStyles(colors);
   return <View style={styles.row}><Text style={styles.label}>{label}</Text><Text style={highlight ? styles.highlight : styles.value}>{value}</Text></View>;
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   page: { padding: 20, paddingBottom: 34 },
   eyebrow: { color: colors.cyan, fontSize: 9, letterSpacing: 1.8, marginBottom: 14 },
-  hero: { flexDirection: "row", alignItems: "center", padding: 17, borderWidth: 1, borderColor: "#205063", backgroundColor: colors.panelRaised },
-  avatar: { width: 68, height: 68, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan, backgroundColor: "#103746", overflow: "hidden" },
+  hero: { flexDirection: "row", alignItems: "center", padding: 17, borderWidth: 1, borderColor: colors.heroBorder, backgroundColor: colors.panelRaised },
+  avatar: { width: 68, height: 68, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan, backgroundColor: colors.activePanel, overflow: "hidden" },
   avatarImage: { width: "100%", height: "100%" },
   initials: { color: colors.cyan, fontSize: 21, fontWeight: "900", letterSpacing: 1 },
   heroCopy: { marginLeft: 15, flex: 1 },
@@ -347,11 +354,11 @@ const styles = StyleSheet.create({
   value: { color: colors.text, fontSize: 13, fontWeight: "700", marginTop: 7 },
   highlight: { color: colors.cyan, fontSize: 13, fontWeight: "800", marginTop: 7 },
   primary: { alignItems: "center", justifyContent: "center", minHeight: 44, marginTop: 9, padding: 12, backgroundColor: colors.cyan },
-  primaryText: { color: "#00202a", fontWeight: "900", fontSize: 10, letterSpacing: 1.2 },
+  primaryText: { color: colors.buttonText, fontWeight: "900", fontSize: 10, letterSpacing: 1.2 },
   secondary: { alignItems: "center", padding: 12, marginTop: 10, borderWidth: 1, borderColor: colors.cyan },
   secondaryText: { color: colors.cyan, fontWeight: "900", fontSize: 10, letterSpacing: 1.1 },
   notice: { color: colors.green, fontSize: 11, marginTop: 14 },
-  error: { color: "#ff7b73", fontSize: 11, marginTop: 14 },
+  error: { color: colors.danger, fontSize: 11, marginTop: 14 },
   addressCard: { padding: 14, marginBottom: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
   addressHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   addressLabel: { color: colors.text, fontSize: 14, fontWeight: "800" },
@@ -359,9 +366,9 @@ const styles = StyleSheet.create({
   addressText: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 8 },
   rowActions: { flexDirection: "row", gap: 16, marginTop: 12 },
   link: { color: colors.cyan, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
-  deleteLink: { color: "#ff8d86", fontSize: 10, fontWeight: "900", letterSpacing: 1 },
+  deleteLink: { color: colors.danger, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
   empty: { color: colors.muted, fontSize: 12, paddingVertical: 8 },
-  addressForm: { padding: 14, marginTop: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: "#07151f" },
+  addressForm: { padding: 14, marginTop: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bar },
   twoColumns: { flexDirection: "row", gap: 10 },
   checkbox: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4, marginBottom: 6 },
   checkboxBox: { width: 18, height: 18, borderWidth: 1, borderColor: colors.border },
@@ -373,9 +380,10 @@ const styles = StyleSheet.create({
   bookingSide: { alignItems: "flex-end" },
   bookingStatus: { color: colors.amber, fontSize: 9, fontWeight: "900" },
   bookingAmount: { color: colors.cyan, fontSize: 11, fontWeight: "800", marginTop: 8 },
-  security: { padding: 14, borderWidth: 1, borderColor: "#594320", backgroundColor: "#211b12" },
+  security: { padding: 14, borderWidth: 1, borderColor: colors.warningBorder, backgroundColor: colors.warningPanel },
   securityTitle: { color: colors.amber, fontSize: 10, fontWeight: "900", letterSpacing: 1.1 },
-  securityText: { color: "#b5a785", fontSize: 11, lineHeight: 18, marginTop: 8 },
-  logout: { alignItems: "center", marginTop: 21, padding: 14, borderWidth: 1, borderColor: "#7c3535", backgroundColor: "#241719" },
-  logoutText: { color: "#ff8d86", fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
-});
+  securityText: { color: colors.warningText, fontSize: 11, lineHeight: 18, marginTop: 8 },
+  logout: { alignItems: "center", marginTop: 21, padding: 14, borderWidth: 1, borderColor: colors.danger, backgroundColor: colors.dangerPanel },
+  logoutText: { color: colors.danger, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
+  });
+}
