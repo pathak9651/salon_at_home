@@ -196,4 +196,31 @@ router.get("/payments", asyncHandler(async (_req, res) => {
   }));
 }));
 
+router.patch("/payments/:id/commission", asyncHandler(async (req, res) => {
+  const data = z.object({ commissionRate: z.coerce.number().int().min(0).max(100) }).parse(req.body);
+  const payment = await prisma.payment.findUnique({
+    where: { id: String(req.params.id) },
+  });
+  if (!payment) throw new HttpError(404, "Payment not found");
+  const platformFee = Math.round((payment.amount * data.commissionRate) / 100);
+  res.json(await prisma.payment.update({
+    where: { id: payment.id },
+    data: {
+      commissionRate: data.commissionRate,
+      platformFee,
+      merchantAmount: payment.amount - platformFee,
+    },
+    include: {
+      booking: {
+        include: {
+          client: { select: { id: true, name: true, phone: true, email: true } },
+          salon: { include: { owner: { select: { id: true, name: true, phone: true, email: true } } } },
+          service: true,
+          services: { include: { service: true } },
+        },
+      },
+    },
+  }));
+}));
+
 export default router;
