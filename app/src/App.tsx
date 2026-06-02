@@ -9,6 +9,7 @@ import { AuthScreen } from "./screens/auth/AuthScreen";
 import { MyBookingsScreen } from "./screens/bookings/MyBookingsScreen";
 import { ClientHomeScreen } from "./screens/client/ClientHomeScreen";
 import { NotificationsScreen } from "./screens/notifications/NotificationsScreen";
+import { OwnerEarningsScreen } from "./screens/owner/OwnerEarningsScreen";
 import { OwnerHomeScreen } from "./screens/owner/OwnerHomeScreen";
 import { OwnerSalonScreen } from "./screens/owner/OwnerSalonScreen";
 import { ProfileScreen } from "./screens/profile/ProfileScreen";
@@ -19,7 +20,7 @@ export type SessionUser = { id: string; name?: string | null; email?: string | n
 export type AuthSession = { token: string; user: SessionUser };
 
 const TOKEN_KEY = "salon_at_home_token";
-type Tab = "home" | "bookings" | "salon" | "notifications" | "profile";
+type Tab = "home" | "bookings" | "salon" | "earnings" | "notifications" | "profile";
 
 export default function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
@@ -126,12 +127,13 @@ function AppContent() {
         {tab === "home" && session.user.role === "OWNER" && <OwnerHomeScreen token={session.token} />}
         {tab === "home" && session.user.role === "ADMIN" && <AdminHomeScreen token={session.token} />}
         {tab === "salon" && session.user.role === "OWNER" && <OwnerSalonScreen token={session.token} />}
+        {tab === "earnings" && session.user.role === "OWNER" && <OwnerEarningsScreen token={session.token} />}
       </View>
       <View style={styles.tabs}>
         <TabButton icon="home" inactiveIcon="home-outline" label="Home" active={tab === "home"} onPress={() => setTab("home")} />
-        {session.user.role === "OWNER"
-          ? <TabButton icon="storefront" inactiveIcon="storefront-outline" label="Salon setup" active={tab === "salon"} onPress={() => setTab("salon")} />
-          : <TabButton icon="calendar" inactiveIcon="calendar-outline" label="My bookings" active={tab === "bookings"} onPress={() => setTab("bookings")} />}
+        {session.user.role === "OWNER" && <TabButton icon="storefront" inactiveIcon="storefront-outline" label="Salon setup" active={tab === "salon"} onPress={() => setTab("salon")} />}
+        {session.user.role === "OWNER" && <TabButton icon="wallet" inactiveIcon="wallet-outline" label="Earnings" active={tab === "earnings"} onPress={() => setTab("earnings")} />}
+        {session.user.role !== "OWNER" && <TabButton icon="calendar" inactiveIcon="calendar-outline" label="My bookings" active={tab === "bookings"} onPress={() => setTab("bookings")} />}
         <TabButton icon="person" inactiveIcon="person-outline" label="Profile" active={tab === "profile"} onPress={() => setTab("profile")} />
       </View>
     </SafeAreaView>
