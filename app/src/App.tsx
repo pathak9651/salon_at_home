@@ -105,8 +105,8 @@ function AppContent() {
         {tab === "profile" && <ProfileScreen token={session.token} user={session.user} onLogout={handleLogout} onUserUpdated={handleUserUpdated} />}
         {tab === "bookings" && <MyBookingsScreen token={session.token} />}
         {tab === "home" && session.user.role === "CLIENT" && <ClientHomeScreen token={session.token} onBookingCompleted={() => setTab("bookings")} />}
-        {tab === "home" && session.user.role === "OWNER" && <OwnerHomeScreen />}
-        {tab === "home" && session.user.role === "ADMIN" && <AdminHomeScreen />}
+        {tab === "home" && session.user.role === "OWNER" && <OwnerHomeScreen token={session.token} />}
+        {tab === "home" && session.user.role === "ADMIN" && <AdminHomeScreen token={session.token} />}
       </View>
       <View style={styles.tabs}>
         <TabButton label="HOME" active={tab === "home"} onPress={() => setTab("home")} />

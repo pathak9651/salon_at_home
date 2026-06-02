@@ -10,6 +10,18 @@ const router = Router();
 router.use(requireAuth);
 
 const cancellableByClientStatuses: BookingStatus[] = [BookingStatus.PENDING, BookingStatus.ACCEPTED];
+const bookingInclude = {
+  salon: true,
+  service: true,
+  services: { include: { service: true } },
+  payment: true,
+  client: { select: { id: true, name: true, phone: true, email: true } },
+};
+
+function shapeBookingForUser<T extends { client?: unknown; status: BookingStatus }>(booking: T, role: UserRole) {
+  if (role !== UserRole.OWNER || booking.status !== BookingStatus.PENDING) return booking;
+  return { ...booking, client: null };
+}
 
 router.get("/", asyncHandler(async (req, res) => {
   const where = req.user!.role === UserRole.OWNER
@@ -17,9 +29,9 @@ router.get("/", asyncHandler(async (req, res) => {
     : { clientId: req.user!.id };
   res.json(await prisma.booking.findMany({
     where,
-    include: { salon: true, service: true, services: { include: { service: true } }, payment: true },
+    include: bookingInclude,
     orderBy: { scheduledAt: "desc" },
-  }));
+  }).then((bookings) => bookings.map((booking) => shapeBookingForUser(booking, req.user!.role))));
 }));
 
 router.post("/", requireRole(UserRole.CLIENT), asyncHandler(async (req, res) => {
@@ -52,28 +64,36 @@ router.post("/", requireRole(UserRole.CLIENT), asyncHandler(async (req, res) => 
         create: sortedServices.map((service) => ({ serviceId: service.id, price: service.price })),
       },
     },
-    include: { salon: true, service: true, services: { include: { service: true } }, payment: true },
+    include: bookingInclude,
   }));
 }));
 
-router.patch("/:id/reschedule", requireRole(UserRole.CLIENT), asyncHandler(async (req, res) => {
+router.patch("/:id/reschedule", asyncHandler(async (req, res) => {
   const { scheduledAt } = z.object({
     scheduledAt: z.coerce.date().refine((date) => date > new Date(), "Choose a future time"),
   }).parse(req.body);
 
   const booking = await prisma.booking.findFirst({
-    where: { id: String(req.params.id), clientId: req.user!.id },
+    where: req.user!.role === UserRole.OWNER
+      ? { id: String(req.params.id), salon: { ownerId: req.user!.id } }
+      : { id: String(req.params.id), clientId: req.user!.id },
+    include: { salon: true },
   });
   if (!booking) throw new HttpError(404, "Booking not found");
-  if (!cancellableByClientStatuses.includes(booking.status)) {
+  if (req.user!.role === UserRole.CLIENT && !cancellableByClientStatuses.includes(booking.status)) {
+    throw new HttpError(400, `Cannot reschedule a ${booking.status.toLowerCase()} booking`);
+  }
+  const ownerReschedulableStatuses: BookingStatus[] = [BookingStatus.PENDING, BookingStatus.ACCEPTED];
+  if (req.user!.role === UserRole.OWNER && !ownerReschedulableStatuses.includes(booking.status)) {
     throw new HttpError(400, `Cannot reschedule a ${booking.status.toLowerCase()} booking`);
   }
 
-  res.json(await prisma.booking.update({
+  const updated = await prisma.booking.update({
     where: { id: booking.id },
     data: { scheduledAt },
-    include: { salon: true, service: true, services: { include: { service: true } }, payment: true },
-  }));
+    include: bookingInclude,
+  });
+  res.json(shapeBookingForUser(updated, req.user!.role));
 }));
 
 router.patch("/:id/status", asyncHandler(async (req, res) => {
@@ -99,7 +119,8 @@ router.patch("/:id/status", asyncHandler(async (req, res) => {
   if (isClientCancelling && !cancellableByClientStatuses.includes(booking.status)) {
     throw new HttpError(400, `Cannot cancel a ${booking.status.toLowerCase()} booking`);
   }
-  res.json(await prisma.booking.update({ where: { id: booking.id }, data: { status } }));
+  const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status }, include: bookingInclude });
+  res.json(shapeBookingForUser(updated, req.user!.role));
 }));
 
 export default router;

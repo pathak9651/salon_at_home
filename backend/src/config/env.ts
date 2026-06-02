@@ -8,6 +8,8 @@ const envSchema = z.object({
   OTP_BYPASS_CODE: z.string().length(6).optional(),
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+  PLATFORM_COMMISSION_PERCENT: z.coerce.number().min(0).max(100).default(10),
   ADMIN_NAME: z.string().default("Platform Admin"),
   ADMIN_EMAIL: z.string().email().default("admin@salonathome.local"),
   ADMIN_PHONE: z.string().min(10).max(15).default("9999999999"),

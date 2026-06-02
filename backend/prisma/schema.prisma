@@ -28,6 +28,16 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum SettlementStatus {
+  PENDING
+  SETTLED
+}
+
+enum PaymentMethod {
+  ONLINE
+  CASH
+}
+
 model User {
   id        String    @id @default(uuid())
   name      String?
@@ -148,6 +158,15 @@ model Payment {
   amount         Int
   currency       String        @default("INR")
   status         PaymentStatus @default(CREATED)
+  method         PaymentMethod?
+  platformFee    Int           @default(0)
+  merchantAmount Int           @default(0)
+  commissionRate Int           @default(10)
+  invoiceNumber  String?       @unique
+  paidAt         DateTime?
+  cashRemark     String?
+  collectedById  String?
+  settlementStatus SettlementStatus @default(PENDING)
   razorpayOrder  String?       @unique
   razorpayPayment String?      @unique
   bookingId      String        @unique

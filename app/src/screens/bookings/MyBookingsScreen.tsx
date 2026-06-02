@@ -12,14 +12,40 @@ type Booking = {
   totalAmount: number;
   status: string;
   salon?: { name: string };
+  client?: { name?: string | null; phone: string; email?: string | null };
   service?: { name: string };
   services?: Array<{ service: { name: string }; price: number }>;
+  payment?: Payment | null;
+};
+
+type Payment = {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  method?: string | null;
+  platformFee: number;
+  merchantAmount: number;
+  commissionRate: number;
+  invoiceNumber?: string | null;
+  paidAt?: string | null;
+  razorpayOrder?: string | null;
+  razorpayPayment?: string | null;
+  cashRemark?: string | null;
+  booking?: Booking;
+};
+
+type PaymentOrderResponse = {
+  keyId: string;
+  order: { id: string; amount: number; currency: string };
+  payment: Payment;
 };
 
 export function MyBookingsScreen({ token }: { token: string }) {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -41,10 +67,76 @@ export function MyBookingsScreen({ token }: { token: string }) {
     setError("");
     try {
       setBookings(await apiRequest<Booking[]>("/bookings", { headers: { Authorization: `Bearer ${token}` } }));
+      setPayments(await apiRequest<Payment[]>("/payments", { headers: { Authorization: `Bearer ${token}` } }));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load bookings");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function payForBooking(booking: Booking) {
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const paymentOrder = await apiRequest<PaymentOrderResponse>("/payments/order", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ bookingId: booking.id }),
+      });
+      const RazorpayCheckout = (await import("react-native-razorpay")).default;
+      const result = await RazorpayCheckout.open({
+        key: paymentOrder.keyId,
+        amount: paymentOrder.order.amount,
+        currency: paymentOrder.order.currency,
+        name: "Salon At Home",
+        description: serviceNames(booking),
+        order_id: paymentOrder.order.id,
+        prefill: {
+          name: booking.client?.name,
+          email: booking.client?.email,
+          contact: booking.client?.phone,
+        },
+        theme: { color: colors.cyan },
+      });
+      await apiRequest<Payment>("/payments/verify", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          bookingId: booking.id,
+          razorpayOrderId: result.razorpay_order_id,
+          razorpayPaymentId: result.razorpay_payment_id,
+          razorpaySignature: result.razorpay_signature,
+        }),
+      });
+      setNotice("Payment successful. Invoice generated.");
+      await loadBookings();
+    } catch (paymentError) {
+      setError(paymentError instanceof Error ? paymentError.message : "Could not complete payment");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function showInvoice(paymentId: string) {
+    setError("");
+    try {
+      const invoice = await apiRequest<Payment>(`/payments/${paymentId}/invoice`, { headers: { Authorization: `Bearer ${token}` } });
+      Alert.alert(
+        "Digital invoice",
+        [
+          `Invoice: ${invoice.invoiceNumber ?? "Pending"}`,
+          `Closed by: ${invoice.method ?? "ONLINE"}`,
+          `Amount: INR ${invoice.amount}`,
+          `Admin brokerage: INR ${invoice.platformFee}`,
+          `Merchant amount: INR ${invoice.merchantAmount}`,
+          invoice.cashRemark ? `Cash remark: ${invoice.cashRemark}` : "",
+          `Razorpay payment: ${invoice.razorpayPayment ?? "N/A"}`,
+        ].filter(Boolean).join("\n"),
+      );
+    } catch (invoiceError) {
+      setError(invoiceError instanceof Error ? invoiceError.message : "Could not load invoice");
     }
   }
 
@@ -125,13 +217,31 @@ export function MyBookingsScreen({ token }: { token: string }) {
       {!!error && <Text style={styles.error}>{error}</Text>}
 
       <Text style={styles.section}>UPCOMING</Text>
-      {upcoming.length ? upcoming.map((booking) => <BookingCard booking={booking} key={booking.id} styles={styles} saving={saving} onCancel={cancelBooking} onStartReschedule={startReschedule} reschedulingBookingId={reschedulingBookingId} rescheduleDate={rescheduleDate} rescheduleTime={rescheduleTime} setShowDatePicker={setShowDatePicker} setShowTimePicker={setShowTimePicker} onSubmitReschedule={submitReschedule} />) : <Text style={styles.empty}>No upcoming bookings.</Text>}
+      {upcoming.length ? upcoming.map((booking) => <BookingCard booking={booking} key={booking.id} styles={styles} saving={saving} onCancel={cancelBooking} onStartReschedule={startReschedule} reschedulingBookingId={reschedulingBookingId} rescheduleDate={rescheduleDate} rescheduleTime={rescheduleTime} setShowDatePicker={setShowDatePicker} setShowTimePicker={setShowTimePicker} onSubmitReschedule={submitReschedule} onPay={payForBooking} onInvoice={showInvoice} />) : <Text style={styles.empty}>No upcoming bookings.</Text>}
 
       {showDatePicker && <DateTimePicker value={rescheduleDateValue ?? new Date()} mode="date" minimumDate={new Date()} display="default" onChange={updateDate} />}
       {showTimePicker && <DateTimePicker value={rescheduleTimeValue ?? new Date()} mode="time" display="default" onChange={updateTime} />}
 
       <Text style={styles.section}>COMPLETED</Text>
-      {completed.length ? completed.map((booking) => <BookingCard booking={booking} key={booking.id} styles={styles} />) : <Text style={styles.empty}>No completed bookings yet.</Text>}
+      {completed.length ? completed.map((booking) => <BookingCard booking={booking} key={booking.id} styles={styles} saving={saving} onPay={payForBooking} onInvoice={showInvoice} />) : <Text style={styles.empty}>No completed bookings yet.</Text>}
+
+      <Text style={styles.section}>PAYMENT HISTORY</Text>
+      {payments.length ? payments.map((payment) => (
+        <View style={styles.paymentCard} key={payment.id}>
+          <View>
+            <Text style={styles.bookingTitle}>{payment.invoiceNumber ?? payment.id.slice(0, 8).toUpperCase()}</Text>
+            <Text style={styles.bookingMeta}>{payment.booking?.salon?.name ?? "Salon"} | {payment.paidAt ? new Date(payment.paidAt).toLocaleString() : payment.status}</Text>
+            <Text style={styles.bookingMeta}>Closed by: {payment.method ?? "ONLINE"}</Text>
+            <Text style={styles.bookingMeta}>Admin brokerage {payment.commissionRate}%: INR {payment.platformFee}</Text>
+            {payment.cashRemark ? <Text style={styles.bookingMeta}>Cash remark: {payment.cashRemark}</Text> : null}
+          </View>
+          <View style={styles.bookingSide}>
+            <Text style={styles.bookingStatus}>{payment.status}</Text>
+            <Text style={styles.bookingAmount}>INR {payment.amount}</Text>
+            {payment.status === "PAID" && <TouchableOpacity onPress={() => void showInvoice(payment.id)}><Text style={styles.link}>INVOICE</Text></TouchableOpacity>}
+          </View>
+        </View>
+      )) : <Text style={styles.empty}>No payments yet. Payment opens after service completion.</Text>}
     </ScrollView>
   );
 }
@@ -148,6 +258,8 @@ function BookingCard({
   setShowDatePicker,
   setShowTimePicker,
   onSubmitReschedule,
+  onPay,
+  onInvoice,
 }: {
   booking: Booking;
   styles: ReturnType<typeof createStyles>;
@@ -160,22 +272,27 @@ function BookingCard({
   setShowDatePicker?: (show: boolean) => void;
   setShowTimePicker?: (show: boolean) => void;
   onSubmitReschedule?: (id: string) => Promise<void>;
+  onPay?: (booking: Booking) => Promise<void>;
+  onInvoice?: (paymentId: string) => Promise<void>;
 }) {
   const canManage = ["PENDING", "ACCEPTED"].includes(booking.status) && !!onCancel && !!onStartReschedule;
+  const canPay = booking.status === "COMPLETED" && booking.payment?.status !== "PAID" && !!onPay;
+  const canViewInvoice = booking.payment?.status === "PAID" && !!booking.payment.id && !!onInvoice;
   const isRescheduling = reschedulingBookingId === booking.id;
-  const serviceNames = booking.services?.length ? booking.services.map((item) => item.service.name).join(", ") : booking.service?.name ?? "Salon service";
 
   return (
     <View style={styles.bookingCard}>
       <View style={styles.bookingTop}>
         <View style={styles.bookingCopy}>
-          <Text style={styles.bookingTitle}>{serviceNames}</Text>
+          <Text style={styles.bookingTitle}>{serviceNames(booking)}</Text>
           <Text style={styles.bookingMeta}>{booking.salon?.name ?? "Salon"} | {new Date(booking.scheduledAt).toLocaleString()}</Text>
           <Text style={styles.bookingMeta}>{booking.address}</Text>
+          {booking.status === "COMPLETED" && booking.payment?.status !== "PAID" && <Text style={styles.payHint}>Service completed. Payment is now available.</Text>}
         </View>
         <View style={styles.bookingSide}>
           <Text style={styles.bookingStatus}>{booking.status}</Text>
           <Text style={styles.bookingAmount}>INR {booking.totalAmount}</Text>
+          {booking.payment?.status === "PAID" && <Text style={styles.paid}>{booking.payment.method ?? "PAID"}</Text>}
         </View>
       </View>
       {canManage && <View style={styles.bookingActions}>
@@ -187,8 +304,14 @@ function BookingCard({
         <TouchableOpacity onPress={() => setShowTimePicker?.(true)} style={styles.reschedulePicker}><Text style={styles.label}>NEW TIME</Text><Text style={styles.value}>{rescheduleTime || "Select time"}</Text></TouchableOpacity>
         <TouchableOpacity disabled={saving} onPress={() => void onSubmitReschedule?.(booking.id)} style={styles.primary}><Text style={styles.primaryText}>SAVE NEW TIME</Text></TouchableOpacity>
       </View>}
+      {canPay && <TouchableOpacity disabled={saving} onPress={() => void onPay?.(booking)} style={styles.payButton}><Text style={styles.primaryText}>PAY NOW</Text></TouchableOpacity>}
+      {canViewInvoice && <TouchableOpacity onPress={() => void onInvoice?.(booking.payment!.id)} style={styles.invoiceButton}><Text style={styles.link}>VIEW DIGITAL INVOICE</Text></TouchableOpacity>}
     </View>
   );
+}
+
+function serviceNames(booking: Booking) {
+  return booking.services?.length ? booking.services.map((item) => item.service.name).join(", ") : booking.service?.name ?? "Salon service";
 }
 
 function createStyles(colors: ThemeColors) {
@@ -207,6 +330,8 @@ function createStyles(colors: ThemeColors) {
     bookingSide: { alignItems: "flex-end" },
     bookingStatus: { color: colors.amber, fontSize: 9, fontWeight: "900" },
     bookingAmount: { color: colors.cyan, fontSize: 11, fontWeight: "800", marginTop: 8 },
+    paid: { color: colors.green, fontSize: 9, fontWeight: "900", marginTop: 8 },
+    payHint: { color: colors.green, fontSize: 10, fontWeight: "800", marginTop: 8 },
     bookingActions: { flexDirection: "row", gap: 10, marginTop: 12 },
     bookingAction: { flex: 1, alignItems: "center", padding: 10, borderWidth: 1, borderColor: colors.border },
     link: { color: colors.cyan, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
@@ -217,5 +342,8 @@ function createStyles(colors: ThemeColors) {
     value: { color: colors.text, fontSize: 13, fontWeight: "700" },
     primary: { alignItems: "center", justifyContent: "center", minHeight: 44, marginTop: 2, padding: 12, backgroundColor: colors.cyan },
     primaryText: { color: colors.buttonText, fontWeight: "900", fontSize: 10, letterSpacing: 1.2 },
+    payButton: { alignItems: "center", justifyContent: "center", minHeight: 44, marginTop: 12, padding: 12, backgroundColor: colors.cyan },
+    invoiceButton: { alignItems: "center", justifyContent: "center", minHeight: 42, marginTop: 12, padding: 12, borderWidth: 1, borderColor: colors.cyan },
+    paymentCard: { flexDirection: "row", justifyContent: "space-between", gap: 10, padding: 14, marginBottom: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
   });
 }
