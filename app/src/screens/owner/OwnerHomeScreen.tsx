@@ -100,7 +100,7 @@ export function OwnerHomeScreen({ token }: { token: string }) {
     }
   }
 
-  async function updateStatus(id: string, status: "ACCEPTED" | "REJECTED" | "COMPLETED" | "CANCELLED") {
+  async function updateStatus(id: string, status: "ACCEPTED" | "REJECTED" | "PAYMENT_PENDING" | "CANCELLED") {
     setSaving(true);
     setNotice("");
     setError("");
@@ -110,7 +110,7 @@ export function OwnerHomeScreen({ token }: { token: string }) {
         headers: { Authorization: `Bearer ${token}` },
         body: JSON.stringify({ status }),
       });
-      setNotice(status === "COMPLETED" ? "Service completed. Client can now pay in the app." : `Booking ${status.toLowerCase()}`);
+      setNotice(status === "PAYMENT_PENDING" ? "Online payment requested. Booking will close after successful payment." : `Booking ${status.toLowerCase()}`);
       await loadBookings();
     } catch (statusError) {
       setError(statusError instanceof Error ? statusError.message : "Could not update booking");
@@ -188,10 +188,11 @@ export function OwnerHomeScreen({ token }: { token: string }) {
     }
   }
 
-  const activeBookings = bookings.filter((booking) => ["PENDING", "ACCEPTED"].includes(booking.status));
+  const activeBookings = bookings.filter((booking) => ["PENDING", "ACCEPTED", "PAYMENT_PENDING"].includes(booking.status));
   const requestBookings = bookings.filter((booking) => booking.status === "PENDING");
   const scheduledBookings = bookings.filter((booking) => booking.status === "ACCEPTED");
-  const historyBookings = bookings.filter((booking) => !["PENDING", "ACCEPTED"].includes(booking.status));
+  const paymentPendingBookings = bookings.filter((booking) => booking.status === "PAYMENT_PENDING");
+  const historyBookings = bookings.filter((booking) => !["PENDING", "ACCEPTED", "PAYMENT_PENDING"].includes(booking.status));
   const paidEarnings = bookings.filter((booking) => booking.payment?.status === "PAID").reduce((sum, booking) => sum + (booking.payment?.merchantAmount ?? 0), 0);
   const todayKey = new Date().toDateString();
   const paidPayments = payments.filter((payment) => payment.status === "PAID");
@@ -273,7 +274,7 @@ export function OwnerHomeScreen({ token }: { token: string }) {
           </View>}
 
           {booking.status === "ACCEPTED" && <View style={styles.actions}>
-            <TouchableOpacity disabled={saving} onPress={() => Alert.alert("Close for online payment?", "This marks service complete. The client will pay online in the app, then admin brokerage and merchant amount are tracked.", [{ text: "Cancel" }, { text: "Close online", onPress: () => void updateStatus(booking.id, "COMPLETED") }])} style={styles.primary}><Text style={styles.primaryText}>CLOSE ONLINE</Text></TouchableOpacity>
+            <TouchableOpacity disabled={saving} onPress={() => Alert.alert("Request online payment?", "This keeps the request open until the client pays online. After successful payment, the booking will close automatically.", [{ text: "Cancel" }, { text: "Request payment", onPress: () => void updateStatus(booking.id, "PAYMENT_PENDING") }])} style={styles.primary}><Text style={styles.primaryText}>REQUEST ONLINE PAYMENT</Text></TouchableOpacity>
             <TouchableOpacity disabled={saving} onPress={() => { setCashBookingId(booking.id); setCashRemark(""); }} style={styles.action}><Text style={styles.link}>CLOSE CASH</Text></TouchableOpacity>
             <TouchableOpacity disabled={saving} onPress={() => startReschedule(booking)} style={styles.action}><Text style={styles.link}>RESCHEDULE</Text></TouchableOpacity>
             <TouchableOpacity disabled={saving} onPress={() => Alert.alert("Cancel booking?", "This will cancel the accepted booking request.", [{ text: "Back" }, { text: "Cancel booking", style: "destructive", onPress: () => void updateStatus(booking.id, "CANCELLED") }])} style={styles.action}><Text style={styles.deleteLink}>CANCEL</Text></TouchableOpacity>
@@ -329,10 +330,10 @@ export function OwnerHomeScreen({ token }: { token: string }) {
 
           <View style={styles.closeInfo}>
             <Text style={styles.closeTitle}>CLOSE REQUEST</Text>
-            <Text style={styles.closeText}>After service completion, close online so the client pays in app, or close cash with a collection remark for admin records.</Text>
+            <Text style={styles.closeText}>After service completion, request online payment so the booking closes only after client payment, or close cash with a collection remark.</Text>
           </View>
           <View style={styles.actions}>
-            <TouchableOpacity disabled={saving} onPress={() => Alert.alert("Close for online payment?", "This marks service complete. The client will pay online in the app.", [{ text: "Cancel" }, { text: "Close online", onPress: () => void updateStatus(booking.id, "COMPLETED") }])} style={styles.primary}><Text style={styles.primaryText}>CLOSE ONLINE</Text></TouchableOpacity>
+            <TouchableOpacity disabled={saving} onPress={() => Alert.alert("Request online payment?", "This keeps the request open until the client pays online. After successful payment, the booking will close automatically.", [{ text: "Cancel" }, { text: "Request payment", onPress: () => void updateStatus(booking.id, "PAYMENT_PENDING") }])} style={styles.primary}><Text style={styles.primaryText}>REQUEST ONLINE PAYMENT</Text></TouchableOpacity>
             <TouchableOpacity disabled={saving} onPress={() => { setCashBookingId(booking.id); setCashRemark(""); }} style={styles.action}><Text style={styles.link}>CLOSE CASH</Text></TouchableOpacity>
           </View>
           <View style={styles.actions}>
@@ -354,6 +355,35 @@ export function OwnerHomeScreen({ token }: { token: string }) {
         </View>
       ))}
 
+      <Text style={styles.section}>WAITING FOR ONLINE PAYMENT</Text>
+      {!paymentPendingBookings.length && <Text style={styles.empty}>No online payment requests waiting.</Text>}
+      {paymentPendingBookings.map((booking) => (
+        <View style={styles.card} key={booking.id}>
+          <View style={styles.top}>
+            <View style={styles.copy}>
+              <Text style={styles.id}>{booking.id.slice(0, 8).toUpperCase()}</Text>
+              <Text style={styles.name}>{serviceNames(booking)}</Text>
+              <Text style={styles.meta}>{new Date(booking.scheduledAt).toLocaleString()}</Text>
+              <Text style={styles.meta}>Location: {booking.address}</Text>
+              <Text style={styles.privateText}>Request is still open. It will close only after successful online payment.</Text>
+              {booking.client ? <Text style={styles.client}>Client: {booking.client.name ?? "Client"} | {booking.client.phone}{booking.client.email ? ` | ${booking.client.email}` : ""}</Text> : null}
+            </View>
+            <View style={styles.side}>
+              <Text style={styles.status}>{booking.status}</Text>
+              <Text style={styles.amount}>INR {booking.totalAmount}</Text>
+            </View>
+          </View>
+          <View style={styles.actions}>
+            <TouchableOpacity disabled={saving} onPress={() => { setCashBookingId(booking.id); setCashRemark(""); }} style={styles.action}><Text style={styles.link}>CLOSE CASH</Text></TouchableOpacity>
+          </View>
+          {cashBookingId === booking.id && <View style={styles.cashPanel}>
+            <Text style={styles.label}>CASH COLLECTION REMARK</Text>
+            <TextInput value={cashRemark} onChangeText={setCashRemark} placeholder="Example: Client paid cash instead of online" placeholderTextColor={colors.placeholder} style={styles.cashInput} multiline />
+            <TouchableOpacity disabled={saving} onPress={() => void closeWithCash(booking.id)} style={styles.primary}><Text style={styles.primaryText}>CLOSE AS CASH COLLECTED</Text></TouchableOpacity>
+          </View>}
+        </View>
+      ))}
+
       <Text style={styles.section}>CLOSED / HISTORY</Text>
       {!historyBookings.length && <Text style={styles.empty}>No closed bookings yet.</Text>}
       {historyBookings.map((booking) => (
@@ -365,7 +395,6 @@ export function OwnerHomeScreen({ token }: { token: string }) {
               <Text style={styles.meta}>{new Date(booking.scheduledAt).toLocaleString()}</Text>
               <Text style={styles.meta}>Location: {booking.address}</Text>
               {!!booking.payment?.method && <Text style={styles.cashNote}>Closed by: {booking.payment.method}{booking.payment.cashRemark ? ` | ${booking.payment.cashRemark}` : ""}</Text>}
-              {booking.status === "COMPLETED" && booking.payment?.status !== "PAID" && <Text style={styles.privateText}>Waiting for client online payment.</Text>}
             </View>
             <View style={styles.side}>
               <Text style={styles.status}>{booking.status}</Text>

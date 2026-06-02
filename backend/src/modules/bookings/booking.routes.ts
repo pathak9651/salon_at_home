@@ -177,7 +177,8 @@ router.patch("/:id/status", asyncHandler(async (req, res) => {
   if (!isOwner && !isClientCancelling) throw new HttpError(403, "Status change not allowed");
   const allowedOwnerTransitions: Record<BookingStatus, BookingStatus[]> = {
     PENDING: [BookingStatus.ACCEPTED, BookingStatus.REJECTED],
-    ACCEPTED: [BookingStatus.COMPLETED, BookingStatus.CANCELLED],
+    ACCEPTED: [BookingStatus.PAYMENT_PENDING, BookingStatus.CANCELLED],
+    PAYMENT_PENDING: [BookingStatus.CANCELLED],
     REJECTED: [],
     COMPLETED: [],
     CANCELLED: [],
@@ -212,13 +213,13 @@ router.patch("/:id/status", asyncHandler(async (req, res) => {
         },
       ], tx);
     }
-    if (status === BookingStatus.COMPLETED) {
+    if (status === BookingStatus.PAYMENT_PENDING) {
       await createNotifications([
         {
           userId: nextBooking.clientId,
           type: "SERVICE_COMPLETED",
-          title: "Service completed",
-          message: `${nextBooking.salon.name} marked your service complete. You can pay online now.`,
+          title: "Payment requested",
+          message: `${nextBooking.salon.name} marked your service finished. Pay online to close the booking.`,
           bookingId: nextBooking.id,
         },
       ], tx);

@@ -86,7 +86,7 @@ router.post("/order", asyncHandler(async (req, res) => {
   const { bookingId } = z.object({ bookingId: z.string() }).parse(req.body);
   const booking = await prisma.booking.findFirst({ where: { id: bookingId, clientId: req.user!.id }, include: { payment: true } });
   if (!booking) throw new HttpError(404, "Booking not found");
-  if (booking.status !== BookingStatus.COMPLETED) throw new HttpError(400, "Payment is available only after the service is completed");
+  if (booking.status !== BookingStatus.PAYMENT_PENDING) throw new HttpError(400, "Payment is available only after the merchant requests online payment");
   if (booking.payment?.status === "PAID") throw new HttpError(400, "This booking is already closed for payment");
   if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) throw new HttpError(503, "Payment provider not configured");
   const razorpay = new Razorpay({ key_id: env.RAZORPAY_KEY_ID, key_secret: env.RAZORPAY_KEY_SECRET });
@@ -122,7 +122,7 @@ router.post("/verify", asyncHandler(async (req, res) => {
     include: { booking: true },
   });
   if (!payment) throw new HttpError(404, "Payment order not found");
-  if (payment.booking.status !== BookingStatus.COMPLETED) throw new HttpError(400, "Payment is available only after service completion");
+  if (payment.booking.status !== BookingStatus.PAYMENT_PENDING) throw new HttpError(400, "Payment is available only after the merchant requests online payment");
   const expected = crypto.createHmac("sha256", env.RAZORPAY_KEY_SECRET)
     .update(`${data.razorpayOrderId}|${data.razorpayPaymentId}`)
     .digest("hex");
@@ -133,6 +133,10 @@ router.post("/verify", asyncHandler(async (req, res) => {
   }
   const admins = await adminIds();
   const paidPayment = await prisma.$transaction(async (tx) => {
+    await tx.booking.update({
+      where: { id: data.bookingId },
+      data: { status: BookingStatus.COMPLETED },
+    });
     const updated = await tx.payment.update({
       where: { bookingId: data.bookingId },
       data: { status: "PAID", method: "ONLINE", razorpayPayment: data.razorpayPaymentId, invoiceNumber: invoiceNumber(), paidAt: new Date(), ...splitAmount(payment.amount) },
@@ -202,9 +206,9 @@ router.post("/cash", asyncHandler(async (req, res) => {
   });
   if (!booking) throw new HttpError(404, "Booking not found");
   if (req.user!.role !== UserRole.OWNER) throw new HttpError(403, "Only merchants can close bookings with cash");
-  const cashClosableStatuses: BookingStatus[] = [BookingStatus.ACCEPTED, BookingStatus.COMPLETED];
+  const cashClosableStatuses: BookingStatus[] = [BookingStatus.ACCEPTED, BookingStatus.PAYMENT_PENDING];
   if (!cashClosableStatuses.includes(booking.status)) {
-    throw new HttpError(400, "Cash collection is allowed only for accepted or completed bookings");
+    throw new HttpError(400, "Cash collection is allowed only for accepted bookings or bookings waiting for payment");
   }
   if (booking.payment?.status === "PAID") throw new HttpError(400, "This booking is already closed for payment");
 

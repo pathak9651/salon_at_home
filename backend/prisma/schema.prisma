@@ -16,6 +16,7 @@ enum UserRole {
 enum BookingStatus {
   PENDING
   ACCEPTED
+  PAYMENT_PENDING
   REJECTED
   COMPLETED
   CANCELLED

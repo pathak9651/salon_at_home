@@ -1,6 +1,6 @@
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, NativeModules, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { apiRequest } from "../../api/client";
 import { ThemeColors, useTheme } from "../../utils/theme";
 import { KeyboardAwareScreen } from "../common/KeyboardAwareScreen";
@@ -91,12 +91,18 @@ export function MyBookingsScreen({ token }: { token: string }) {
     setError("");
     setNotice("");
     try {
+      if (!NativeModules.RazorpayCheckout) {
+        throw new Error("Razorpay is not available in this app build. Create a development or release build after installing react-native-razorpay; Expo Go cannot open Razorpay checkout.");
+      }
       const paymentOrder = await apiRequest<PaymentOrderResponse>("/payments/order", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: JSON.stringify({ bookingId: booking.id }),
       });
       const RazorpayCheckout = (await import("react-native-razorpay")).default;
+      if (!RazorpayCheckout?.open) {
+        throw new Error("Razorpay checkout is not linked in this app build. Rebuild the native app and try again.");
+      }
       const result = await RazorpayCheckout.open({
         key: paymentOrder.keyId,
         amount: paymentOrder.order.amount,
@@ -244,7 +250,8 @@ export function MyBookingsScreen({ token }: { token: string }) {
   }
 
   const upcoming = bookings.filter((booking) => ["PENDING", "ACCEPTED"].includes(booking.status) && new Date(booking.scheduledAt) >= new Date());
-  const completed = bookings.filter((booking) => !upcoming.some((item) => item.id === booking.id));
+  const awaitingPayment = bookings.filter((booking) => booking.status === "PAYMENT_PENDING");
+  const completed = bookings.filter((booking) => !upcoming.some((item) => item.id === booking.id) && booking.status !== "PAYMENT_PENDING");
 
   if (loading) return <View style={styles.center}><ActivityIndicator color={colors.cyan} /></View>;
 
@@ -259,6 +266,9 @@ export function MyBookingsScreen({ token }: { token: string }) {
 
       {showDatePicker && <DateTimePicker value={rescheduleDateValue ?? new Date()} mode="date" minimumDate={new Date()} display="default" onChange={updateDate} />}
       {showTimePicker && <DateTimePicker value={rescheduleTimeValue ?? new Date()} mode="time" display="default" onChange={updateTime} />}
+
+      <Text style={styles.section}>AWAITING PAYMENT</Text>
+      {awaitingPayment.length ? awaitingPayment.map((booking) => <BookingCard booking={booking} key={booking.id} styles={styles} saving={saving} onPay={payForBooking} onInvoice={showInvoice} />) : <Text style={styles.empty}>No payment requests right now.</Text>}
 
       <Text style={styles.section}>COMPLETED</Text>
       {completed.length ? completed.map((booking) => <BookingCard booking={booking} key={booking.id} styles={styles} saving={saving} onPay={payForBooking} onInvoice={showInvoice} onStartReview={startReview} onSubmitReview={submitReview} reviewingBookingId={reviewingBookingId} reviewRating={reviewRating} reviewComment={reviewComment} setReviewRating={setReviewRating} setReviewComment={setReviewComment} />) : <Text style={styles.empty}>No completed bookings yet.</Text>}
@@ -328,7 +338,7 @@ function BookingCard({
   setReviewComment?: (comment: string) => void;
 }) {
   const canManage = ["PENDING", "ACCEPTED"].includes(booking.status) && !!onCancel && !!onStartReschedule;
-  const canPay = booking.status === "COMPLETED" && booking.payment?.status !== "PAID" && !!onPay;
+  const canPay = booking.status === "PAYMENT_PENDING" && booking.payment?.status !== "PAID" && !!onPay;
   const canViewInvoice = booking.payment?.status === "PAID" && !!booking.payment.id && !!onInvoice;
   const canReview = booking.status === "COMPLETED" && !booking.review && !!onStartReview;
   const isRescheduling = reschedulingBookingId === booking.id;
@@ -341,7 +351,7 @@ function BookingCard({
           <Text style={styles.bookingTitle}>{serviceNames(booking)}</Text>
           <Text style={styles.bookingMeta}>{booking.salon?.name ?? "Salon"} | {new Date(booking.scheduledAt).toLocaleString()}</Text>
           <Text style={styles.bookingMeta}>{booking.address}</Text>
-          {booking.status === "COMPLETED" && booking.payment?.status !== "PAID" && <Text style={styles.payHint}>Service completed. Payment is now available.</Text>}
+          {booking.status === "PAYMENT_PENDING" && booking.payment?.status !== "PAID" && <Text style={styles.payHint}>Service finished. Pay online to close this booking.</Text>}
         </View>
         <View style={styles.bookingSide}>
           <Text style={styles.bookingStatus}>{booking.status}</Text>
