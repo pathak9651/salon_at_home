@@ -23,10 +23,26 @@ router.get("/", asyncHandler(async (req, res) => {
     lat: z.coerce.number().min(-90).max(90).optional(),
     lng: z.coerce.number().min(-180).max(180).optional(),
     radiusKm: z.coerce.number().positive().max(100).default(25),
+    search: z.string().trim().optional(),
+    minRating: z.coerce.number().min(0).max(5).optional(),
+    maxPrice: z.coerce.number().int().positive().optional(),
+    service: z.string().trim().optional(),
   }).parse(req.query);
 
   const salons = await prisma.salon.findMany({
-    include: { services: true, reviews: { select: { rating: true } } },
+    where: {
+      ...(query.search && {
+        OR: [
+          { name: { contains: query.search, mode: "insensitive" } },
+          { address: { contains: query.search, mode: "insensitive" } },
+          { description: { contains: query.search, mode: "insensitive" } },
+          { services: { some: { name: { contains: query.search, mode: "insensitive" } } } },
+        ],
+      }),
+      ...(query.service && { services: { some: { name: { contains: query.service, mode: "insensitive" } } } }),
+      ...(query.maxPrice && { services: { some: { price: { lte: query.maxPrice } } } }),
+    },
+    include: { services: true, images: true, reviews: { select: { rating: true } } },
     orderBy: { createdAt: "desc" },
   });
 
@@ -42,6 +58,8 @@ router.get("/", asyncHandler(async (req, res) => {
       ...salon,
       rating,
       reviewCount: salon.reviews.length,
+      minServicePrice: salon.services.length ? Math.min(...salon.services.map((service) => service.price)) : null,
+      coverImageUrl: salon.imageUrl ?? salon.images[0]?.url ?? null,
       distanceKm: distance === null ? null : Number(distance.toFixed(2)),
     };
   });
@@ -52,16 +70,25 @@ router.get("/", asyncHandler(async (req, res) => {
         .sort((a, b) => (a.distanceKm ?? Number.MAX_VALUE) - (b.distanceKm ?? Number.MAX_VALUE))
     : withLocationMeta;
 
-  res.json(nearbySalons);
+  res.json(nearbySalons.filter((salon) => query.minRating === undefined || (salon.rating ?? 0) >= query.minRating));
 }));
 
 router.get("/:id", asyncHandler(async (req, res) => {
   const salon = await prisma.salon.findUnique({
     where: { id: String(req.params.id) },
-    include: { services: true, reviews: true },
+    include: { services: true, images: true, reviews: true },
   });
   if (!salon) throw new HttpError(404, "Salon not found");
-  res.json(salon);
+  const rating = salon.reviews.length
+    ? salon.reviews.reduce((sum, review) => sum + review.rating, 0) / salon.reviews.length
+    : null;
+  res.json({
+    ...salon,
+    rating,
+    reviewCount: salon.reviews.length,
+    minServicePrice: salon.services.length ? Math.min(...salon.services.map((service) => service.price)) : null,
+    coverImageUrl: salon.imageUrl ?? salon.images[0]?.url ?? null,
+  });
 }));
 
 router.post("/", requireAuth, requireRole(UserRole.OWNER), asyncHandler(async (req, res) => {
@@ -72,8 +99,20 @@ router.post("/", requireAuth, requireRole(UserRole.OWNER), asyncHandler(async (r
     latitude: z.number(),
     longitude: z.number(),
     imageUrl: z.string().url().optional(),
+    images: z.array(z.object({ url: z.string().url(), caption: z.string().optional() })).default([]),
   }).parse(req.body);
-  res.status(201).json(await prisma.salon.create({ data: { ...data, ownerId: req.user!.id } }));
+  const { images, ...salonData } = data;
+  res.status(201).json(await prisma.salon.create({
+    data: { ...salonData, ownerId: req.user!.id, images: { create: images } },
+    include: { images: true },
+  }));
+}));
+
+router.post("/:id/images", requireAuth, requireRole(UserRole.OWNER), asyncHandler(async (req, res) => {
+  const salon = await prisma.salon.findFirst({ where: { id: String(req.params.id), ownerId: req.user!.id } });
+  if (!salon) throw new HttpError(404, "Salon not found");
+  const data = z.object({ url: z.string().url(), caption: z.string().trim().optional() }).parse(req.body);
+  res.status(201).json(await prisma.salonImage.create({ data: { ...data, salonId: salon.id } }));
 }));
 
 router.post("/:id/services", requireAuth, requireRole(UserRole.OWNER), asyncHandler(async (req, res) => {

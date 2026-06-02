@@ -79,10 +79,22 @@ model Salon {
   ownerId     String
   owner       User      @relation(fields: [ownerId], references: [id])
   services    Service[]
+  images      SalonImage[]
   bookings    Booking[]
   reviews     Review[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+}
+
+model SalonImage {
+  id        String   @id @default(uuid())
+  url       String
+  caption   String?
+  salonId   String
+  salon     Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([salonId])
 }
 
 model Service {
