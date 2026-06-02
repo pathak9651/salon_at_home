@@ -122,7 +122,7 @@ function AppContent() {
         </TouchableOpacity>
       </View>
       <View style={styles.content}>
-        {tab === "profile" && <ProfileScreen token={session.token} user={session.user} onLogout={handleLogout} onUserUpdated={handleUserUpdated} />}
+        {tab === "profile" && <ProfileScreen token={session.token} user={session.user} onLogout={handleLogout} onUserUpdated={handleUserUpdated} onOpenBookings={() => setTab("bookings")} onOpenNotifications={() => setTab("notifications")} />}
         {tab === "bookings" && session.user.role === "ADMIN" && <AdminBookingsScreen token={session.token} />}
         {tab === "bookings" && session.user.role !== "ADMIN" && <MyBookingsScreen token={session.token} />}
         {tab === "notifications" && <NotificationsScreen token={session.token} onUnreadChanged={setUnreadNotifications} />}

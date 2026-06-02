@@ -43,11 +43,15 @@ export function ProfileScreen({
   user,
   onLogout,
   onUserUpdated,
+  onOpenBookings,
+  onOpenNotifications,
 }: {
   token: string;
   user: SessionUser;
   onLogout: () => Promise<void>;
   onUserUpdated: (user: SessionUser) => void;
+  onOpenBookings?: () => void;
+  onOpenNotifications?: () => void;
 }) {
   const { colors } = useTheme();
   const styles = createStyles(colors);
@@ -58,6 +62,7 @@ export function ProfileScreen({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [detectingLocation, setDetectingLocation] = useState(false);
+  const [activeSection, setActiveSection] = useState<"profile" | "address" | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -231,6 +236,8 @@ export function ProfileScreen({
   const displayRole = user.role === "OWNER" ? "MERCHANT" : user.role;
   const photoUrl = apiAssetUrl(profile?.profilePhotoUrl ?? user.profilePhotoUrl);
   const initials = (profile?.name ?? user.name ?? user.email ?? "SA").split(/[\s@]+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
+  const displayName = profile?.name ?? user.name ?? "My Profile";
+  const displayPhone = profile?.phone ?? user.phone;
 
   if (loading) {
     return <View style={styles.center}><ActivityIndicator color={colors.cyan} /></View>;
@@ -238,65 +245,99 @@ export function ProfileScreen({
 
   return (
     <KeyboardAwareScreen contentContainerStyle={styles.page}>
-        <Text style={styles.eyebrow}>ACCOUNT // PROFILE</Text>
-        <View style={styles.hero}>
-          <TouchableOpacity onPress={() => void uploadPhoto()} style={styles.avatar}>
+        <View style={styles.topBar}>
+          <Text style={styles.screenTitle}>My Profile</Text>
+          <View style={styles.topActions}>
+            <TouchableOpacity accessibilityLabel="Notifications" onPress={onOpenNotifications} style={styles.iconButton}>
+              <Ionicons name="notifications-outline" size={22} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity accessibilityLabel="Profile settings" onPress={() => setActiveSection("profile")} style={styles.iconButton}>
+              <Ionicons name="settings-outline" size={22} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.identityBlock}>
+          <TouchableOpacity accessibilityLabel="Save profile photo" onPress={() => void uploadPhoto()} style={styles.avatar}>
             {photoUrl ? <Image source={{ uri: photoUrl }} style={styles.avatarImage} /> : <Text style={styles.initials}>{initials}</Text>}
+            <View style={styles.editBadge}><Ionicons name="pencil" size={15} color={colors.buttonText} /></View>
           </TouchableOpacity>
-          <View style={styles.heroCopy}>
-            <Text style={styles.name}>{profile?.name ?? "Salon At Home User"}</Text>
+          <View style={styles.identityCopy}>
+            <Text style={styles.name}>{displayName}</Text>
+            <View style={styles.phoneLine}>
+              <Ionicons name="call" size={15} color={colors.muted} />
+              <Text style={styles.phone}>{displayPhone}</Text>
+            </View>
             <Text style={styles.role}>{displayRole} ACCOUNT</Text>
-            <Text style={styles.status}>{profile?.emailVerified ? "VERIFIED SESSION" : "EMAIL NOT VERIFIED"}</Text>
           </View>
         </View>
 
         {!!notice && <Text style={styles.notice}>{notice}</Text>}
         {!!error && <Text style={styles.error}>{error}</Text>}
 
-        <Text style={styles.section}>PERSONAL INFORMATION</Text>
-        <Field label="FULL NAME" value={name} onChangeText={setName} placeholder="Your name" />
-        <ProfileRow label="EMAIL ADDRESS" value={profile?.email ?? "Not added"} />
-        <Field label="PHONE NUMBER" value={phone} onChangeText={setPhone} placeholder="9876543210" keyboardType="phone-pad" />
-        <ProfileRow label="ACCOUNT TYPE" value={displayRole} highlight />
-        <TouchableOpacity disabled={saving} onPress={() => void savePersonalInfo()} style={styles.primary}>
-          {saving ? <ActivityIndicator color={colors.buttonText} /> : <Text style={styles.primaryText}>SAVE PERSONAL INFO</Text>}
-        </TouchableOpacity>
-
-        <Text style={styles.section}>SAVED ADDRESSES</Text>
-        {profile?.addresses.length ? profile.addresses.map((item) => (
-          <View style={styles.addressCard} key={item.id}>
-            <View style={styles.addressHeader}>
-              <Text style={styles.addressLabel}>{item.label}</Text>
-              {item.isDefault && <Text style={styles.defaultBadge}>DEFAULT</Text>}
-            </View>
-            <Text style={styles.addressText}>{[item.line1, item.line2, item.city, item.state, item.pincode].filter(Boolean).join(", ")}</Text>
-            <View style={styles.rowActions}>
-              {!item.isDefault && <TouchableOpacity onPress={() => void makeDefaultAddress(item.id)}><Text style={styles.link}>MAKE DEFAULT</Text></TouchableOpacity>}
-              <TouchableOpacity onPress={() => Alert.alert("Delete address?", "This saved address will be removed.", [{ text: "Cancel" }, { text: "Delete", onPress: () => void deleteAddress(item.id), style: "destructive" }])}><Text style={styles.deleteLink}>DELETE</Text></TouchableOpacity>
-            </View>
-          </View>
-        )) : <Text style={styles.empty}>No saved addresses yet.</Text>}
-
-        <View style={styles.addressForm}>
-          <TouchableOpacity accessibilityLabel="Auto detect location" accessibilityRole="button" disabled={detectingLocation} onPress={() => void detectAddress()} style={styles.locationButton}>
-            {detectingLocation ? <ActivityIndicator color={colors.cyan} /> : <Ionicons name="locate" size={22} color={colors.cyan} />}
-          </TouchableOpacity>
-          <Field label="LABEL" value={address.label} onChangeText={(label) => setAddress((current) => ({ ...current, label }))} placeholder="Home, Work, Studio" />
-          <Field label="ADDRESS LINE 1" value={address.line1} onChangeText={(line1) => setAddress((current) => ({ ...current, line1 }))} placeholder="House number and street" />
-          <Field label="ADDRESS LINE 2" value={address.line2} onChangeText={(line2) => setAddress((current) => ({ ...current, line2 }))} placeholder="Landmark or area" />
-          <Field label="CITY" value={address.city} onChangeText={(city) => setAddress((current) => ({ ...current, city }))} placeholder="City" />
-          <Field label="PINCODE" value={address.pincode} onChangeText={(pincode) => setAddress((current) => ({ ...current, pincode }))} placeholder="560001" keyboardType="number-pad" />
-          <Field label="STATE" value={address.state} onChangeText={(state) => setAddress((current) => ({ ...current, state }))} placeholder="State" />
-          <TouchableOpacity onPress={() => setAddress((current) => ({ ...current, isDefault: !current.isDefault }))} style={styles.checkbox}>
-            <View style={[styles.checkboxBox, address.isDefault && styles.checkboxActive]} />
-            <Text style={styles.checkboxText}>Set as default address</Text>
-          </TouchableOpacity>
-          <TouchableOpacity disabled={saving} onPress={() => void addAddress()} style={styles.primary}><Text style={styles.primaryText}>SAVE ADDRESS</Text></TouchableOpacity>
+        <View style={styles.quickGrid}>
+          <QuickTile icon="calendar-number-outline" title="My bookings" onPress={onOpenBookings} />
+          <QuickTile icon="gift-outline" title="Refer And Earn" onPress={() => Alert.alert("Refer And Earn", "Referral rewards will be available soon.")} />
+          <QuickTile icon="headset-outline" title="Help & support" onPress={() => Alert.alert("Help & support", "Raise a ticket from the profile menu for support.")} />
         </View>
 
-        <TouchableOpacity onPress={() => void onLogout()} style={styles.logout}>
-          <Text style={styles.logoutText}>LOGOUT FROM DEVICE</Text>
-        </TouchableOpacity>
+        <View style={styles.menu}>
+          <MenuRow icon="person-circle-outline" title="My Profile" onPress={() => setActiveSection(activeSection === "profile" ? null : "profile")} active={activeSection === "profile"} />
+          {activeSection === "profile" && (
+            <View style={styles.inlinePanel}>
+              <Field label="FULL NAME" value={name} onChangeText={setName} placeholder="Your name" />
+              <ProfileRow label="EMAIL ADDRESS" value={profile?.email ?? "Not added"} />
+              <Field label="PHONE NUMBER" value={phone} onChangeText={setPhone} placeholder="9876543210" keyboardType="phone-pad" />
+              <ProfileRow label="ACCOUNT TYPE" value={displayRole} highlight />
+              <TouchableOpacity disabled={saving} onPress={() => void savePersonalInfo()} style={styles.primary}>
+                {saving ? <ActivityIndicator color={colors.buttonText} /> : <Text style={styles.primaryText}>SAVE</Text>}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <MenuRow icon="diamond-outline" title="My Membership Plan" onPress={() => Alert.alert("Membership Plan", "Membership plans will be available soon.")} />
+          <MenuRow icon="location-outline" title="Manage Address" onPress={() => setActiveSection(activeSection === "address" ? null : "address")} active={activeSection === "address"} />
+          {activeSection === "address" && (
+            <View style={styles.inlinePanel}>
+              {profile?.addresses.length ? profile.addresses.map((item) => (
+                <View style={styles.addressCard} key={item.id}>
+                  <View style={styles.addressHeader}>
+                    <Text style={styles.addressLabel}>{item.label}</Text>
+                    {item.isDefault && <Text style={styles.defaultBadge}>DEFAULT</Text>}
+                  </View>
+                  <Text style={styles.addressText}>{[item.line1, item.line2, item.city, item.state, item.pincode].filter(Boolean).join(", ")}</Text>
+                  <View style={styles.rowActions}>
+                    {!item.isDefault && <TouchableOpacity onPress={() => void makeDefaultAddress(item.id)}><Text style={styles.link}>MAKE DEFAULT</Text></TouchableOpacity>}
+                    <TouchableOpacity onPress={() => Alert.alert("Delete address?", "This saved address will be removed.", [{ text: "Cancel" }, { text: "Delete", onPress: () => void deleteAddress(item.id), style: "destructive" }])}><Text style={styles.deleteLink}>DELETE</Text></TouchableOpacity>
+                  </View>
+                </View>
+              )) : <Text style={styles.empty}>No saved addresses yet.</Text>}
+
+              <View style={styles.addressForm}>
+                <TouchableOpacity accessibilityLabel="Auto detect location" accessibilityRole="button" disabled={detectingLocation} onPress={() => void detectAddress()} style={styles.locationButton}>
+                  {detectingLocation ? <ActivityIndicator color={colors.cyan} /> : <Ionicons name="locate" size={22} color={colors.cyan} />}
+                </TouchableOpacity>
+                <Field label="LABEL" value={address.label} onChangeText={(label) => setAddress((current) => ({ ...current, label }))} placeholder="Home, Work, Studio" />
+                <Field label="ADDRESS LINE 1" value={address.line1} onChangeText={(line1) => setAddress((current) => ({ ...current, line1 }))} placeholder="House number and street" />
+                <Field label="ADDRESS LINE 2" value={address.line2} onChangeText={(line2) => setAddress((current) => ({ ...current, line2 }))} placeholder="Landmark or area" />
+                <Field label="CITY" value={address.city} onChangeText={(city) => setAddress((current) => ({ ...current, city }))} placeholder="City" />
+                <Field label="PINCODE" value={address.pincode} onChangeText={(pincode) => setAddress((current) => ({ ...current, pincode }))} placeholder="560001" keyboardType="number-pad" />
+                <Field label="STATE" value={address.state} onChangeText={(state) => setAddress((current) => ({ ...current, state }))} placeholder="State" />
+                <TouchableOpacity onPress={() => setAddress((current) => ({ ...current, isDefault: !current.isDefault }))} style={styles.checkbox}>
+                  <View style={[styles.checkboxBox, address.isDefault && styles.checkboxActive]} />
+                  <Text style={styles.checkboxText}>Set as default address</Text>
+                </TouchableOpacity>
+                <TouchableOpacity disabled={saving} onPress={() => void addAddress()} style={styles.primary}><Text style={styles.primaryText}>SAVE</Text></TouchableOpacity>
+              </View>
+            </View>
+          )}
+          <MenuRow icon="information-circle-outline" title="About App" onPress={() => Alert.alert("About App", "Salon At Home connects clients with trusted salon services at home.")} />
+          <MenuRow icon="shield-checkmark-outline" title="Privacy Policy" onPress={() => Alert.alert("Privacy Policy", "Privacy policy content will be added in the app settings.")} />
+          <MenuRow icon="document-text-outline" title="Terms & Conditions" onPress={() => Alert.alert("Terms & Conditions", "Terms and conditions content will be added in the app settings.")} />
+          <MenuRow icon="warning-outline" title="Report A Safety Issue" onPress={() => Alert.alert("Report A Safety Issue", "Please contact support immediately for urgent safety issues.")} />
+          <MenuRow icon="ticket-outline" title="Raise a ticket" onPress={() => Alert.alert("Raise a ticket", "Support ticket creation will be available soon.")} />
+          <MenuRow icon="log-out-outline" title="Logout" destructive onPress={() => void onLogout()} />
+        </View>
     </KeyboardAwareScreen>
   );
 }
@@ -314,20 +355,73 @@ function ProfileRow({ label, value, highlight = false }: { label: string; value:
   return <View style={styles.row}><Text style={styles.label}>{label}</Text><Text style={highlight ? styles.highlight : styles.value}>{value}</Text></View>;
 }
 
+function QuickTile({ icon, title, onPress }: { icon: React.ComponentProps<typeof Ionicons>["name"]; title: string; onPress?: () => void }) {
+  const { colors } = useTheme();
+  const styles = createStyles(colors);
+  return (
+    <TouchableOpacity onPress={onPress} style={styles.quickTile}>
+      <Ionicons name={icon} size={25} color={colors.text} />
+      <Text style={styles.quickTitle}>{title}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function MenuRow({
+  icon,
+  title,
+  onPress,
+  active = false,
+  destructive = false,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  title: string;
+  onPress: () => void;
+  active?: boolean;
+  destructive?: boolean;
+}) {
+  const { colors } = useTheme();
+  const styles = createStyles(colors);
+  return (
+    <TouchableOpacity onPress={onPress} style={[styles.menuRow, active && styles.menuRowActive]}>
+      <Ionicons name={icon} size={24} color={destructive ? colors.danger : active ? colors.cyan : colors.text} />
+      <Text style={[styles.menuTitle, destructive && styles.menuTitleDanger]}>{title}</Text>
+      <Ionicons name={active ? "chevron-up" : "chevron-forward"} size={18} color={colors.muted} />
+    </TouchableOpacity>
+  );
+}
+
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   page: { padding: 20, paddingBottom: 34 },
+  topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 24 },
+  screenTitle: { color: colors.text, fontSize: 24, fontWeight: "900" },
+  topActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  iconButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   eyebrow: { color: colors.cyan, fontSize: 9, letterSpacing: 1.8, marginBottom: 14 },
   hero: { flexDirection: "row", alignItems: "center", padding: 17, borderWidth: 1, borderColor: colors.heroBorder, backgroundColor: colors.panelRaised },
-  avatar: { width: 68, height: 68, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan, backgroundColor: colors.activePanel, overflow: "hidden" },
-  avatarImage: { width: "100%", height: "100%" },
-  initials: { color: colors.cyan, fontSize: 21, fontWeight: "900", letterSpacing: 1 },
+  identityBlock: { flexDirection: "row", alignItems: "center", marginBottom: 24 },
+  avatar: { width: 92, height: 92, borderRadius: 46, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, backgroundColor: colors.activePanel },
+  avatarImage: { width: "100%", height: "100%", borderRadius: 46 },
+  initials: { color: colors.cyan, fontSize: 28, fontWeight: "900", letterSpacing: 1 },
+  editBadge: { position: "absolute", right: -1, bottom: 2, width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: colors.background, backgroundColor: colors.cyan },
   heroCopy: { marginLeft: 15, flex: 1 },
-  name: { color: colors.text, fontSize: 20, fontWeight: "800" },
+  identityCopy: { flex: 1, marginLeft: 24 },
+  name: { color: colors.text, fontSize: 20, fontWeight: "900" },
+  phoneLine: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 11 },
+  phone: { color: colors.muted, fontSize: 16, fontWeight: "700" },
   role: { color: colors.amber, fontSize: 9, fontWeight: "900", letterSpacing: 1.4, marginTop: 7 },
   status: { color: colors.green, fontSize: 9, fontWeight: "800", letterSpacing: 1, marginTop: 8 },
+  quickGrid: { flexDirection: "row", gap: 10, marginTop: 16, marginBottom: 28 },
+  quickTile: { flex: 1, minHeight: 118, justifyContent: "space-between", padding: 16, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panelRaised },
+  quickTitle: { color: colors.text, fontSize: 16, fontWeight: "900", lineHeight: 21 },
+  menu: { marginHorizontal: -20, borderTopWidth: 6, borderTopColor: colors.border, backgroundColor: colors.panel },
+  menuRow: { minHeight: 72, flexDirection: "row", alignItems: "center", gap: 18, paddingHorizontal: 24, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.panel },
+  menuRowActive: { backgroundColor: colors.activePanel },
+  menuTitle: { flex: 1, color: colors.text, fontSize: 18, fontWeight: "800" },
+  menuTitleDanger: { color: colors.danger },
+  inlinePanel: { paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.bar },
   section: { color: colors.text, fontSize: 12, fontWeight: "800", letterSpacing: 1.4, marginTop: 25, marginBottom: 10 },
   field: { flex: 1, marginBottom: 9 },
   label: { color: colors.muted, fontSize: 9, fontWeight: "800", letterSpacing: 1, marginBottom: 7 },
