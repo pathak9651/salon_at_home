@@ -1,12 +1,14 @@
+import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
-import { useEffect, useState } from "react";
+import { ComponentProps, useEffect, useState } from "react";
 import { ActivityIndicator, Platform, SafeAreaView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { apiRequest } from "./api/client";
 import { AdminHomeScreen } from "./screens/admin/AdminHomeScreen";
 import { AuthScreen } from "./screens/auth/AuthScreen";
 import { MyBookingsScreen } from "./screens/bookings/MyBookingsScreen";
 import { ClientHomeScreen } from "./screens/client/ClientHomeScreen";
+import { NotificationsScreen } from "./screens/notifications/NotificationsScreen";
 import { OwnerHomeScreen } from "./screens/owner/OwnerHomeScreen";
 import { ProfileScreen } from "./screens/profile/ProfileScreen";
 import { palettes, ThemeMode, ThemeProvider, useTheme } from "./utils/theme";
@@ -16,7 +18,7 @@ export type SessionUser = { id: string; name?: string | null; email?: string | n
 export type AuthSession = { token: string; user: SessionUser };
 
 const TOKEN_KEY = "salon_at_home_token";
-type Tab = "home" | "bookings" | "profile";
+type Tab = "home" | "bookings" | "notifications" | "profile";
 
 export default function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
@@ -39,6 +41,7 @@ function AppContent() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("home");
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   useEffect(() => {
     void restoreSession();
@@ -57,6 +60,7 @@ function AppContent() {
     try {
       const user = await apiRequest<SessionUser>("/auth/me", { headers: { Authorization: `Bearer ${token}` } });
       setSession({ token, user });
+      await refreshUnreadCount(token);
     } catch {
       await SecureStore.deleteItemAsync(TOKEN_KEY);
     } finally {
@@ -68,6 +72,13 @@ function AppContent() {
     await SecureStore.setItemAsync(TOKEN_KEY, nextSession.token);
     setSession(nextSession);
     setTab("home");
+    await refreshUnreadCount(nextSession.token);
+  }
+
+  async function refreshUnreadCount(token = session?.token) {
+    if (!token) return;
+    const response = await apiRequest<{ unreadCount: number }>("/notifications", { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+    setUnreadNotifications(response?.unreadCount ?? 0);
   }
 
   function handleUserUpdated(user: SessionUser) {
@@ -81,6 +92,7 @@ function AppContent() {
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     setSession(null);
     setTab("home");
+    setUnreadNotifications(0);
   }
 
   if (loading) {
@@ -97,6 +109,10 @@ function AppContent() {
       <View style={styles.sessionBar}>
         <Text style={styles.identity}>{session.user.name ?? session.user.email ?? session.user.phone}</Text>
         <Text style={styles.role}>{session.user.role === "OWNER" ? "MERCHANT" : session.user.role}</Text>
+        <TouchableOpacity onPress={() => setTab("notifications")} style={styles.noticeButton}>
+          <Text style={styles.noticeIcon}>🔔</Text>
+          {!!unreadNotifications && <View style={styles.noticeBadge}><Text style={styles.noticeBadgeText}>{unreadNotifications > 9 ? "9+" : unreadNotifications}</Text></View>}
+        </TouchableOpacity>
         <TouchableOpacity onPress={toggleTheme} style={styles.themeButton}>
           <Text style={styles.themeButtonText}>{mode === "dark" ? "LIGHT" : "DARK"}</Text>
         </TouchableOpacity>
@@ -104,23 +120,40 @@ function AppContent() {
       <View style={styles.content}>
         {tab === "profile" && <ProfileScreen token={session.token} user={session.user} onLogout={handleLogout} onUserUpdated={handleUserUpdated} />}
         {tab === "bookings" && <MyBookingsScreen token={session.token} />}
-        {tab === "home" && session.user.role === "CLIENT" && <ClientHomeScreen token={session.token} onBookingCompleted={() => setTab("bookings")} />}
+        {tab === "notifications" && <NotificationsScreen token={session.token} onUnreadChanged={setUnreadNotifications} />}
+        {tab === "home" && session.user.role === "CLIENT" && <ClientHomeScreen token={session.token} onBookingCompleted={() => { void refreshUnreadCount(); setTab("bookings"); }} />}
         {tab === "home" && session.user.role === "OWNER" && <OwnerHomeScreen token={session.token} />}
         {tab === "home" && session.user.role === "ADMIN" && <AdminHomeScreen token={session.token} />}
       </View>
       <View style={styles.tabs}>
-        <TabButton label="HOME" active={tab === "home"} onPress={() => setTab("home")} />
-        <TabButton label="MY BOOKINGS" active={tab === "bookings"} onPress={() => setTab("bookings")} />
-        <TabButton label="PROFILE" active={tab === "profile"} onPress={() => setTab("profile")} />
+        <TabButton icon="home" inactiveIcon="home-outline" label="Home" active={tab === "home"} onPress={() => setTab("home")} />
+        <TabButton icon="calendar" inactiveIcon="calendar-outline" label="My bookings" active={tab === "bookings"} onPress={() => setTab("bookings")} />
+        <TabButton icon="person" inactiveIcon="person-outline" label="Profile" active={tab === "profile"} onPress={() => setTab("profile")} />
       </View>
     </SafeAreaView>
   );
 }
 
-function TabButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function TabButton({
+  icon,
+  inactiveIcon,
+  label,
+  active,
+  onPress,
+}: {
+  icon: ComponentProps<typeof Ionicons>["name"];
+  inactiveIcon: ComponentProps<typeof Ionicons>["name"];
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
   const { colors } = useTheme();
   const styles = createStyles(colors);
-  return <TouchableOpacity onPress={onPress} style={styles.tab}><Text style={active ? styles.tabActive : styles.tabInactive}>{label}</Text></TouchableOpacity>;
+  return (
+    <TouchableOpacity accessibilityLabel={label} accessibilityRole="button" onPress={onPress} style={[styles.tab, active && styles.tabSelected]}>
+      <Ionicons name={active ? icon : inactiveIcon} size={24} color={active ? colors.cyan : colors.muted} />
+    </TouchableOpacity>
+  );
 }
 
 function createStyles(colors: typeof palettes.dark) {
@@ -132,11 +165,14 @@ function createStyles(colors: typeof palettes.dark) {
   sessionBar: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.bar },
   identity: { flex: 1, color: colors.text, fontSize: 11, fontWeight: "700" },
   role: { color: colors.amber, fontSize: 9, fontWeight: "800", letterSpacing: 1 },
+  noticeButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan },
+  noticeIcon: { fontSize: 17 },
+  noticeBadge: { position: "absolute", top: -7, right: -7, minWidth: 18, height: 18, alignItems: "center", justifyContent: "center", paddingHorizontal: 4, borderWidth: 1, borderColor: colors.bar, backgroundColor: colors.danger },
+  noticeBadgeText: { color: colors.buttonText, fontSize: 8, fontWeight: "900" },
   themeButton: { paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: colors.cyan },
   themeButtonText: { color: colors.cyan, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
   tabs: { flexDirection: "row", borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.bar },
-  tab: { flex: 1, alignItems: "center", paddingVertical: 16 },
-  tabActive: { color: colors.cyan, fontSize: 10, fontWeight: "900", letterSpacing: 1.4 },
-  tabInactive: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 1.4 },
+  tab: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 56, paddingVertical: 12 },
+  tabSelected: { backgroundColor: colors.activePanel },
   });
 }

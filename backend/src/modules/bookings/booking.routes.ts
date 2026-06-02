@@ -3,6 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../../config/prisma";
 import { requireAuth, requireRole } from "../../middleware/auth.middleware";
+import { createNotifications } from "../notifications/notification.service";
 import { asyncHandler } from "../../utils/async-handler";
 import { HttpError } from "../../utils/http-error";
 
@@ -21,6 +22,10 @@ const bookingInclude = {
 function shapeBookingForUser<T extends { client?: unknown; status: BookingStatus }>(booking: T, role: UserRole) {
   if (role !== UserRole.OWNER || booking.status !== BookingStatus.PENDING) return booking;
   return { ...booking, client: null };
+}
+
+function serviceNames(booking: { service?: { name: string }; services?: Array<{ service: { name: string } }> }) {
+  return booking.services?.length ? booking.services.map((item) => item.service.name).join(", ") : booking.service?.name ?? "Salon service";
 }
 
 router.get("/", asyncHandler(async (req, res) => {
@@ -51,21 +56,41 @@ router.post("/", requireRole(UserRole.CLIENT), asyncHandler(async (req, res) => 
   const sortedServices = serviceIds.map((id) => services.find((service) => service.id === id)!);
   const totalAmount = sortedServices.reduce((sum, service) => sum + service.price, 0);
 
-  res.status(201).json(await prisma.booking.create({
-    data: {
-      salonId: data.salonId,
-      serviceId: sortedServices[0].id,
-      scheduledAt: data.scheduledAt,
-      address: data.address,
-      instructions: data.instructions,
-      clientId: req.user!.id,
-      totalAmount,
-      services: {
-        create: sortedServices.map((service) => ({ serviceId: service.id, price: service.price })),
+  const booking = await prisma.$transaction(async (tx) => {
+    const created = await tx.booking.create({
+      data: {
+        salonId: data.salonId,
+        serviceId: sortedServices[0].id,
+        scheduledAt: data.scheduledAt,
+        address: data.address,
+        instructions: data.instructions,
+        clientId: req.user!.id,
+        totalAmount,
+        services: {
+          create: sortedServices.map((service) => ({ serviceId: service.id, price: service.price })),
+        },
       },
-    },
-    include: bookingInclude,
-  }));
+      include: bookingInclude,
+    });
+    await createNotifications([
+      {
+        userId: req.user!.id,
+        type: "BOOKING_CREATED",
+        title: "Booking request sent",
+        message: `${serviceNames(created)} at ${created.salon.name} is waiting for merchant response.`,
+        bookingId: created.id,
+      },
+      {
+        userId: created.salon.ownerId,
+        type: "BOOKING_CREATED",
+        title: "New booking request",
+        message: `${serviceNames(created)} requested for INR ${created.totalAmount}.`,
+        bookingId: created.id,
+      },
+    ], tx);
+    return created;
+  });
+  res.status(201).json(booking);
 }));
 
 router.patch("/:id/reschedule", asyncHandler(async (req, res) => {
@@ -88,10 +113,29 @@ router.patch("/:id/reschedule", asyncHandler(async (req, res) => {
     throw new HttpError(400, `Cannot reschedule a ${booking.status.toLowerCase()} booking`);
   }
 
-  const updated = await prisma.booking.update({
-    where: { id: booking.id },
-    data: { scheduledAt },
-    include: bookingInclude,
+  const updated = await prisma.$transaction(async (tx) => {
+    const nextBooking = await tx.booking.update({
+      where: { id: booking.id },
+      data: { scheduledAt },
+      include: bookingInclude,
+    });
+    await createNotifications([
+      {
+        userId: nextBooking.clientId,
+        type: "BOOKING_RESCHEDULED",
+        title: "Booking rescheduled",
+        message: `${nextBooking.salon.name} booking moved to ${nextBooking.scheduledAt.toLocaleString()}.`,
+        bookingId: nextBooking.id,
+      },
+      {
+        userId: nextBooking.salon.ownerId,
+        type: "BOOKING_RESCHEDULED",
+        title: "Booking rescheduled",
+        message: `${serviceNames(nextBooking)} moved to ${nextBooking.scheduledAt.toLocaleString()}.`,
+        bookingId: nextBooking.id,
+      },
+    ], tx);
+    return nextBooking;
   });
   res.json(shapeBookingForUser(updated, req.user!.role));
 }));
@@ -119,7 +163,43 @@ router.patch("/:id/status", asyncHandler(async (req, res) => {
   if (isClientCancelling && !cancellableByClientStatuses.includes(booking.status)) {
     throw new HttpError(400, `Cannot cancel a ${booking.status.toLowerCase()} booking`);
   }
-  const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status }, include: bookingInclude });
+  const updated = await prisma.$transaction(async (tx) => {
+    const nextBooking = await tx.booking.update({ where: { id: booking.id }, data: { status }, include: bookingInclude });
+    if (status === BookingStatus.ACCEPTED) {
+      await createNotifications([
+        {
+          userId: nextBooking.clientId,
+          type: "BOOKING_ACCEPTED",
+          title: "Booking accepted",
+          message: `${nextBooking.salon.name} accepted your booking for ${nextBooking.scheduledAt.toLocaleString()}.`,
+          bookingId: nextBooking.id,
+        },
+      ], tx);
+    }
+    if (status === BookingStatus.REJECTED) {
+      await createNotifications([
+        {
+          userId: nextBooking.clientId,
+          type: "BOOKING_REJECTED",
+          title: "Booking rejected",
+          message: `${nextBooking.salon.name} rejected your booking request.`,
+          bookingId: nextBooking.id,
+        },
+      ], tx);
+    }
+    if (status === BookingStatus.COMPLETED) {
+      await createNotifications([
+        {
+          userId: nextBooking.clientId,
+          type: "SERVICE_COMPLETED",
+          title: "Service completed",
+          message: `${nextBooking.salon.name} marked your service complete. You can pay online now.`,
+          bookingId: nextBooking.id,
+        },
+      ], tx);
+    }
+    return nextBooking;
+  });
   res.json(shapeBookingForUser(updated, req.user!.role));
 }));
 

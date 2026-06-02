@@ -6,6 +6,7 @@ import { z } from "zod";
 import { env } from "../../config/env";
 import { prisma } from "../../config/prisma";
 import { requireAuth } from "../../middleware/auth.middleware";
+import { createNotifications } from "../notifications/notification.service";
 import { asyncHandler } from "../../utils/async-handler";
 import { HttpError } from "../../utils/http-error";
 
@@ -42,6 +43,11 @@ function paymentAccessWhere(user: AuthedUser) {
   if (user.role === UserRole.ADMIN) return {};
   if (user.role === UserRole.OWNER) return { booking: { salon: { ownerId: user.id } } };
   return { booking: { clientId: user.id } };
+}
+
+async function adminIds() {
+  const admins = await prisma.user.findMany({ where: { role: UserRole.ADMIN }, select: { id: true } });
+  return admins.map((admin) => admin.id);
 }
 
 router.get("/", asyncHandler(async (req, res) => {
@@ -124,11 +130,42 @@ router.post("/verify", asyncHandler(async (req, res) => {
   if (expectedBuffer.length !== receivedBuffer.length || !crypto.timingSafeEqual(expectedBuffer, receivedBuffer)) {
     throw new HttpError(400, "Invalid payment signature");
   }
-  res.json(await prisma.payment.update({
-    where: { bookingId: data.bookingId },
-    data: { status: "PAID", method: "ONLINE", razorpayPayment: data.razorpayPaymentId, invoiceNumber: invoiceNumber(), paidAt: new Date(), ...splitAmount(payment.amount) },
-    include: paymentInclude,
-  }));
+  const admins = await adminIds();
+  const paidPayment = await prisma.$transaction(async (tx) => {
+    const updated = await tx.payment.update({
+      where: { bookingId: data.bookingId },
+      data: { status: "PAID", method: "ONLINE", razorpayPayment: data.razorpayPaymentId, invoiceNumber: invoiceNumber(), paidAt: new Date(), ...splitAmount(payment.amount) },
+      include: paymentInclude,
+    });
+    await createNotifications([
+      {
+        userId: updated.booking.clientId,
+        type: "PAYMENT_RECEIVED",
+        title: "Payment successful",
+        message: `Online payment of INR ${updated.amount} received for ${updated.booking.salon.name}.`,
+        bookingId: updated.bookingId,
+        paymentId: updated.id,
+      },
+      {
+        userId: updated.booking.salon.ownerId,
+        type: "PAYMENT_RECEIVED",
+        title: "Online payment received",
+        message: `INR ${updated.merchantAmount} merchant amount recorded after platform brokerage.`,
+        bookingId: updated.bookingId,
+        paymentId: updated.id,
+      },
+      ...admins.map((userId) => ({
+        userId,
+        type: "PAYMENT_RECEIVED" as const,
+        title: "Online payment closed",
+        message: `Booking ${updated.bookingId.slice(0, 8).toUpperCase()} closed online for INR ${updated.amount}.`,
+        bookingId: updated.bookingId,
+        paymentId: updated.id,
+      })),
+    ], tx);
+    return updated;
+  });
+  res.json(paidPayment);
 }));
 
 router.post("/cash", asyncHandler(async (req, res) => {
@@ -149,9 +186,10 @@ router.post("/cash", asyncHandler(async (req, res) => {
   if (booking.payment?.status === "PAID") throw new HttpError(400, "This booking is already closed for payment");
 
   const split = splitAmount(booking.totalAmount);
+  const admins = await adminIds();
   const payment = await prisma.$transaction(async (tx) => {
-    await tx.booking.update({ where: { id: booking.id }, data: { status: BookingStatus.COMPLETED } });
-    return tx.payment.upsert({
+    const completedBooking = await tx.booking.update({ where: { id: booking.id }, data: { status: BookingStatus.COMPLETED }, include: { salon: true } });
+    const cashPayment = await tx.payment.upsert({
       where: { bookingId: booking.id },
       update: {
         amount: booking.totalAmount,
@@ -176,6 +214,33 @@ router.post("/cash", asyncHandler(async (req, res) => {
       },
       include: paymentInclude,
     });
+    await createNotifications([
+      {
+        userId: completedBooking.clientId,
+        type: "CASH_COLLECTED",
+        title: "Cash payment recorded",
+        message: `${completedBooking.salon.name} recorded cash collection of INR ${cashPayment.amount}.`,
+        bookingId: completedBooking.id,
+        paymentId: cashPayment.id,
+      },
+      {
+        userId: completedBooking.salon.ownerId,
+        type: "CASH_COLLECTED",
+        title: "Cash collection closed",
+        message: `Cash remark saved: ${data.remark}`,
+        bookingId: completedBooking.id,
+        paymentId: cashPayment.id,
+      },
+      ...admins.map((userId) => ({
+        userId,
+        type: "CASH_COLLECTED" as const,
+        title: "Cash payment closed",
+        message: `Booking ${completedBooking.id.slice(0, 8).toUpperCase()} closed by cash. Remark: ${data.remark}`,
+        bookingId: completedBooking.id,
+        paymentId: cashPayment.id,
+      })),
+    ], tx);
+    return cashPayment;
   });
   res.status(201).json(payment);
 }));
