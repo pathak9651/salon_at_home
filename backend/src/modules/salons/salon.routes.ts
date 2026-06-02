@@ -40,6 +40,7 @@ router.get("/", asyncHandler(async (req, res) => {
 
   const salons = await prisma.salon.findMany({
     where: {
+      status: "APPROVED",
       ...(query.search && {
         OR: [
           { name: { contains: query.search, mode: "insensitive" } },
@@ -100,6 +101,7 @@ router.get("/:id", asyncHandler(async (req, res) => {
     include: { services: true, images: true, reviews: { include: { client: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" } } },
   });
   if (!salon) throw new HttpError(404, "Salon not found");
+  if (salon.status !== "APPROVED") throw new HttpError(404, "Salon not found");
   const rating = salon.reviews.length
     ? salon.reviews.reduce((sum, review) => sum + review.rating, 0) / salon.reviews.length
     : null;

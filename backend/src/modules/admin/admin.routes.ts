@@ -1,4 +1,4 @@
-import { UserRole } from "@prisma/client";
+import { SalonStatus, UserRole } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../../config/prisma";
@@ -45,6 +45,45 @@ router.get("/users", asyncHandler(async (_req, res) => {
       _count: { select: { salons: true, bookings: true } },
     },
     orderBy: { createdAt: "desc" },
+  }));
+}));
+
+router.get("/salons", asyncHandler(async (_req, res) => {
+  const salons = await prisma.salon.findMany({
+    include: {
+      owner: { select: { id: true, name: true, phone: true, email: true, isSuspended: true } },
+      images: true,
+      services: true,
+      reviews: { select: { rating: true } },
+      bookings: { include: { payment: true } },
+      _count: { select: { bookings: true, services: true, employees: true, reviews: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  res.json(salons.map((salon) => ({
+    ...salon,
+    rating: salon.reviews.length ? salon.reviews.reduce((sum, review) => sum + review.rating, 0) / salon.reviews.length : null,
+    paidRevenue: salon.bookings.reduce((sum, booking) => sum + (booking.payment?.status === "PAID" ? booking.payment.amount : 0), 0),
+    activeBookings: salon.bookings.filter((booking) => ["PENDING", "ACCEPTED"].includes(booking.status)).length,
+    completedBookings: salon.bookings.filter((booking) => booking.status === "COMPLETED").length,
+  })));
+}));
+
+router.patch("/salons/:id/status", asyncHandler(async (req, res) => {
+  const data = z.object({ status: z.nativeEnum(SalonStatus) }).parse(req.body);
+  const salon = await prisma.salon.findUnique({ where: { id: String(req.params.id) } });
+  if (!salon) throw new HttpError(404, "Salon not found");
+  res.json(await prisma.salon.update({
+    where: { id: salon.id },
+    data: { status: data.status, isVerified: data.status === "APPROVED" },
+    include: {
+      owner: { select: { id: true, name: true, phone: true, email: true, isSuspended: true } },
+      images: true,
+      services: true,
+      reviews: { select: { rating: true } },
+      bookings: { include: { payment: true } },
+      _count: { select: { bookings: true, services: true, employees: true, reviews: true } },
+    },
   }));
 }));
 

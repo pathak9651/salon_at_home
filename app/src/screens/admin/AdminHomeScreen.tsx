@@ -44,12 +44,28 @@ type AdminUser = {
   _count?: { salons: number; bookings: number };
 };
 
+type AdminSalon = {
+  id: string;
+  name: string;
+  address: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  isVerified: boolean;
+  createdAt: string;
+  rating?: number | null;
+  paidRevenue?: number;
+  activeBookings?: number;
+  completedBookings?: number;
+  owner?: { name?: string | null; phone: string; email?: string | null; isSuspended: boolean };
+  _count?: { bookings: number; services: number; employees: number; reviews: number };
+};
+
 export function AdminHomeScreen({ token }: { token: string }) {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [salons, setSalons] = useState<AdminSalon[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -65,6 +81,7 @@ export function AdminHomeScreen({ token }: { token: string }) {
       setOverview(await apiRequest<Overview>("/admin/overview", { headers: { Authorization: `Bearer ${token}` } }));
       setPayments(await apiRequest<Payment[]>("/admin/payments", { headers: { Authorization: `Bearer ${token}` } }));
       setUsers(await apiRequest<AdminUser[]>("/admin/users", { headers: { Authorization: `Bearer ${token}` } }));
+      setSalons(await apiRequest<AdminSalon[]>("/admin/salons", { headers: { Authorization: `Bearer ${token}` } }));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load admin overview");
     } finally {
@@ -97,6 +114,23 @@ export function AdminHomeScreen({ token }: { token: string }) {
       await loadOverview();
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : "Could not delete account");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateSalonStatus(salon: AdminSalon, status: AdminSalon["status"]) {
+    setSaving(true);
+    setError("");
+    try {
+      await apiRequest(`/admin/salons/${salon.id}/status`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status }),
+      });
+      await loadOverview();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Could not update salon");
     } finally {
       setSaving(false);
     }
@@ -157,6 +191,38 @@ export function AdminHomeScreen({ token }: { token: string }) {
         </View>
       )) : <Text style={styles.empty}>No salon owners found.</Text>}
 
+      <Text style={styles.section}>SALON MANAGEMENT</Text>
+      {salons.length ? salons.map((salon) => (
+        <View style={styles.userCard} key={salon.id}>
+          <View style={styles.userTop}>
+            <View style={styles.copy}>
+              <Text style={styles.title}>{salon.name}</Text>
+              <Text style={styles.detail}>Owner: {salon.owner?.name ?? salon.owner?.phone ?? "N/A"}{salon.owner?.isSuspended ? " | Owner suspended" : ""}</Text>
+              <Text style={styles.detail}>{salon.address}</Text>
+              <Text style={styles.detail}>{salon._count?.services ?? 0} services | {salon._count?.employees ?? 0} employees | {salon._count?.reviews ?? 0} reviews</Text>
+              <Text style={styles.detail}>{salon.activeBookings ?? 0} active | {salon.completedBookings ?? 0} completed | INR {salon.paidRevenue ?? 0} paid</Text>
+              <Text style={styles.detail}>Rating: {salon.rating ? salon.rating.toFixed(1) : "NEW"}</Text>
+            </View>
+            <Text style={salon.status === "APPROVED" ? styles.active : salon.status === "REJECTED" ? styles.suspended : styles.pending}>{salon.status}</Text>
+          </View>
+          <View style={styles.actions}>
+            <TouchableOpacity disabled={saving || salon.status === "APPROVED"} onPress={() => void updateSalonStatus(salon, "APPROVED")} style={styles.actionButton}>
+              <Text style={styles.activateText}>APPROVE</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              disabled={saving || salon.status === "REJECTED"}
+              onPress={() => Alert.alert("Reject fake salon?", "Rejected salons will be hidden from client discovery.", [{ text: "Cancel" }, { text: "Reject", style: "destructive", onPress: () => void updateSalonStatus(salon, "REJECTED") }])}
+              style={styles.actionButton}
+            >
+              <Text style={styles.deleteText}>REJECT</Text>
+            </TouchableOpacity>
+            {salon.status !== "PENDING" && <TouchableOpacity disabled={saving} onPress={() => void updateSalonStatus(salon, "PENDING")} style={styles.actionButton}>
+              <Text style={styles.suspendText}>MARK PENDING</Text>
+            </TouchableOpacity>}
+          </View>
+        </View>
+      )) : <Text style={styles.empty}>No salons found.</Text>}
+
       <Text style={styles.section}>CLOSED REQUESTS</Text>
       {payments.length ? payments.map((payment) => (
         <View style={styles.row} key={payment.id}>
@@ -197,6 +263,7 @@ function createStyles(colors: ThemeColors) {
     userTop: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
     active: { color: colors.green, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
     suspended: { color: colors.danger, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
+    pending: { color: colors.amber, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
     actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
     actionButton: { minHeight: 38, justifyContent: "center", paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border },
     suspendText: { color: colors.amber, fontSize: 10, fontWeight: "900", letterSpacing: 1 },

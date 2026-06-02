@@ -38,6 +38,12 @@ enum PaymentMethod {
   CASH
 }
 
+enum SalonStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum NotificationType {
   BOOKING_CREATED
   BOOKING_ACCEPTED
@@ -98,6 +104,7 @@ model Salon {
   longitude   Float
   imageUrl    String?
   isVerified  Boolean   @default(false)
+  status      SalonStatus @default(PENDING)
   ownerId     String
   owner       User      @relation(fields: [ownerId], references: [id])
   services    Service[]
