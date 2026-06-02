@@ -13,16 +13,26 @@ type Booking = {
   totalAmount: number;
   status: string;
   client?: { name?: string | null; phone: string; email?: string | null } | null;
-  salon?: { name: string };
+  salon?: { id: string; name: string };
+  employee?: Employee | null;
   service?: { name: string };
   services?: Array<{ service: { name: string }; price: number }>;
   payment?: { status: string; method?: string | null; platformFee: number; merchantAmount: number; cashRemark?: string | null } | null;
+};
+
+type Employee = {
+  id: string;
+  name: string;
+  roleTitle?: string | null;
+  isActive: boolean;
+  salonId: string;
 };
 
 export function OwnerHomeScreen({ token }: { token: string }) {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
@@ -45,11 +55,35 @@ export function OwnerHomeScreen({ token }: { token: string }) {
     setLoading(true);
     setError("");
     try {
-      setBookings(await apiRequest<Booking[]>("/bookings", { headers: { Authorization: `Bearer ${token}` } }));
+      const [nextBookings, nextEmployees] = await Promise.all([
+        apiRequest<Booking[]>("/bookings", { headers: { Authorization: `Bearer ${token}` } }),
+        apiRequest<Employee[]>("/employees", { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      setBookings(nextBookings);
+      setEmployees(nextEmployees);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load merchant bookings");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function assignEmployee(bookingId: string, employeeId: string | null) {
+    setSaving(true);
+    setNotice("");
+    setError("");
+    try {
+      await apiRequest<Booking>(`/bookings/${bookingId}/employee`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ employeeId }),
+      });
+      setNotice(employeeId ? "Employee assigned to booking." : "Employee assignment removed.");
+      await loadBookings();
+    } catch (assignError) {
+      setError(assignError instanceof Error ? assignError.message : "Could not assign employee");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -165,6 +199,7 @@ export function OwnerHomeScreen({ token }: { token: string }) {
               <Text style={styles.name}>{serviceNames(booking)}</Text>
               <Text style={styles.meta}>{new Date(booking.scheduledAt).toLocaleString()}</Text>
               <Text style={styles.meta}>Location: {booking.address}</Text>
+              <Text style={booking.employee ? styles.assigned : styles.privateText}>Assigned: {booking.employee?.name ?? "Not assigned"}</Text>
               {booking.client ? <Text style={styles.client}>Client: {booking.client.name ?? "Client"} | {booking.client.phone}{booking.client.email ? ` | ${booking.client.email}` : ""}</Text> : <Text style={styles.privateText}>Client info unlocks after accepting.</Text>}
             </View>
             <View style={styles.side}>
@@ -173,6 +208,19 @@ export function OwnerHomeScreen({ token }: { token: string }) {
               {booking.payment?.status === "PAID" && <Text style={styles.paid}>{booking.payment.method ?? "PAID"}</Text>}
             </View>
           </View>
+
+          {booking.salon?.id && ["PENDING", "ACCEPTED"].includes(booking.status) && <View style={styles.assignPanel}>
+            <Text style={styles.label}>ASSIGN STYLIST</Text>
+            <View style={styles.employeeChips}>
+              {employees.filter((employee) => employee.isActive && employee.salonId === booking.salon?.id).map((employee) => (
+                <TouchableOpacity disabled={saving} onPress={() => void assignEmployee(booking.id, employee.id)} style={[styles.employeeChip, booking.employee?.id === employee.id && styles.employeeChipActive]} key={employee.id}>
+                  <Text style={[styles.employeeChipText, booking.employee?.id === employee.id && styles.employeeChipTextActive]}>{employee.name}</Text>
+                </TouchableOpacity>
+              ))}
+              {booking.employee && <TouchableOpacity disabled={saving} onPress={() => void assignEmployee(booking.id, null)} style={styles.employeeChip}><Text style={styles.deleteLink}>CLEAR</Text></TouchableOpacity>}
+            </View>
+            {!employees.some((employee) => employee.isActive && employee.salonId === booking.salon?.id) && <Text style={styles.empty}>Add employees from Salon setup first.</Text>}
+          </View>}
 
           {booking.status === "PENDING" && <View style={styles.actions}>
             <TouchableOpacity disabled={saving} onPress={() => void updateStatus(booking.id, "ACCEPTED")} style={styles.primary}><Text style={styles.primaryText}>ACCEPT</Text></TouchableOpacity>
@@ -236,10 +284,17 @@ function createStyles(colors: ThemeColors) {
     meta: { color: colors.muted, fontSize: 10, marginTop: 6, lineHeight: 15 },
     client: { color: colors.text, fontSize: 10, fontWeight: "700", marginTop: 8, lineHeight: 15 },
     privateText: { color: colors.amber, fontSize: 10, fontWeight: "800", marginTop: 8 },
+    assigned: { color: colors.green, fontSize: 10, fontWeight: "800", marginTop: 8 },
     status: { color: colors.amber, fontSize: 9, fontWeight: "900" },
     amount: { color: colors.cyan, fontSize: 11, fontWeight: "800", marginTop: 8 },
     paid: { color: colors.green, fontSize: 9, fontWeight: "900", marginTop: 8 },
     actions: { flexDirection: "row", gap: 8, marginTop: 12 },
+    assignPanel: { marginTop: 12, padding: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelRaised },
+    employeeChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    employeeChip: { minHeight: 34, justifyContent: "center", paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    employeeChipActive: { borderColor: colors.cyan, backgroundColor: colors.activePanel },
+    employeeChipText: { color: colors.muted, fontSize: 10, fontWeight: "900" },
+    employeeChipTextActive: { color: colors.cyan },
     primary: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 42, paddingHorizontal: 12, backgroundColor: colors.cyan },
     primaryText: { color: colors.buttonText, fontWeight: "900", fontSize: 10, letterSpacing: 1 },
     action: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 42, paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border },

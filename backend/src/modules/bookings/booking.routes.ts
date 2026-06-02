@@ -17,6 +17,7 @@ const bookingInclude = {
   services: { include: { service: true } },
   payment: true,
   review: true,
+  employee: true,
   client: { select: { id: true, name: true, phone: true, email: true } },
 };
 
@@ -137,6 +138,29 @@ router.patch("/:id/reschedule", asyncHandler(async (req, res) => {
       },
     ], tx);
     return nextBooking;
+  });
+  res.json(shapeBookingForUser(updated, req.user!.role));
+}));
+
+router.patch("/:id/employee", requireRole(UserRole.OWNER), asyncHandler(async (req, res) => {
+  const data = z.object({ employeeId: z.string().nullable().optional() }).parse(req.body);
+  const booking = await prisma.booking.findFirst({
+    where: { id: String(req.params.id), salon: { ownerId: req.user!.id } },
+    include: { salon: true },
+  });
+  if (!booking) throw new HttpError(404, "Booking not found");
+
+  if (data.employeeId) {
+    const employee = await prisma.employee.findFirst({
+      where: { id: data.employeeId, salonId: booking.salonId, salon: { ownerId: req.user!.id }, isActive: true },
+    });
+    if (!employee) throw new HttpError(404, "Active employee not found for this salon");
+  }
+
+  const updated = await prisma.booking.update({
+    where: { id: booking.id },
+    data: { employeeId: data.employeeId ?? null },
+    include: bookingInclude,
   });
   res.json(shapeBookingForUser(updated, req.user!.role));
 }));

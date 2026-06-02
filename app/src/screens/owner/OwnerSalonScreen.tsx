@@ -9,6 +9,17 @@ import { KeyboardAwareScreen } from "../common/KeyboardAwareScreen";
 import { ScreenHeader } from "../common/ScreenHeader";
 
 type Service = { id: string; name: string; description?: string | null; price: number; durationMin: number };
+type Employee = {
+  id: string;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  roleTitle?: string | null;
+  specialties?: string | null;
+  isActive: boolean;
+  salonId: string;
+  salon?: { id: string; name: string };
+};
 type Salon = {
   id: string;
   name: string;
@@ -26,11 +37,13 @@ type Profile = { name?: string | null; phone: string; email?: string | null; ema
 
 const emptySalonForm = { name: "", description: "", address: "", latitude: "", longitude: "" };
 const emptyServiceForm = { name: "", description: "", price: "", durationMin: "" };
+const emptyEmployeeForm = { name: "", phone: "", email: "", roleTitle: "", specialties: "" };
 
 export function OwnerSalonScreen({ token }: { token: string }) {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const [salons, setSalons] = useState<Salon[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -38,7 +51,9 @@ export function OwnerSalonScreen({ token }: { token: string }) {
   const [salonForm, setSalonForm] = useState(emptySalonForm);
   const [salonImages, setSalonImages] = useState<ImagePicker.ImagePickerAsset[]>([]);
   const [serviceForms, setServiceForms] = useState<Record<string, typeof emptyServiceForm>>({});
+  const [employeeForms, setEmployeeForms] = useState<Record<string, typeof emptyEmployeeForm>>({});
   const [editingService, setEditingService] = useState<{ salonId: string; serviceId: string } | null>(null);
+  const [editingEmployee, setEditingEmployee] = useState<{ salonId: string; employeeId: string } | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -50,12 +65,14 @@ export function OwnerSalonScreen({ token }: { token: string }) {
     setLoading(true);
     setError("");
     try {
-      const [nextSalons, nextProfile] = await Promise.all([
+      const [nextSalons, nextProfile, nextEmployees] = await Promise.all([
         apiRequest<Salon[]>("/salons/mine", { headers: { Authorization: `Bearer ${token}` } }),
         apiRequest<Profile>("/profile", { headers: { Authorization: `Bearer ${token}` } }),
+        apiRequest<Employee[]>("/employees", { headers: { Authorization: `Bearer ${token}` } }),
       ]);
       setSalons(nextSalons);
       setProfile(nextProfile);
+      setEmployees(nextEmployees);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load salon workspace");
     } finally {
@@ -194,6 +211,67 @@ export function OwnerSalonScreen({ token }: { token: string }) {
     }
   }
 
+  function employeeFormFor(salonId: string) {
+    return employeeForms[salonId] ?? emptyEmployeeForm;
+  }
+
+  function updateEmployeeForm(salonId: string, patch: Partial<typeof emptyEmployeeForm>) {
+    setEmployeeForms((current) => ({ ...current, [salonId]: { ...employeeFormFor(salonId), ...patch } }));
+  }
+
+  function startEditEmployee(salonId: string, employee: Employee) {
+    setEditingEmployee({ salonId, employeeId: employee.id });
+    setEmployeeForms((current) => ({
+      ...current,
+      [salonId]: {
+        name: employee.name,
+        phone: employee.phone ?? "",
+        email: employee.email ?? "",
+        roleTitle: employee.roleTitle ?? "",
+        specialties: employee.specialties ?? "",
+      },
+    }));
+  }
+
+  async function saveEmployee(salonId: string) {
+    const form = employeeFormFor(salonId);
+    setSaving(true);
+    setNotice("");
+    setError("");
+    try {
+      if (!form.name.trim()) throw new Error("Add employee name");
+      const activeEdit = editingEmployee?.salonId === salonId ? editingEmployee.employeeId : null;
+      await apiRequest(activeEdit ? `/employees/${activeEdit}` : "/employees", {
+        method: activeEdit ? "PATCH" : "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ...form, salonId, isActive: true }),
+      });
+      setEditingEmployee(null);
+      setEmployeeForms((current) => ({ ...current, [salonId]: emptyEmployeeForm }));
+      setNotice(activeEdit ? "Employee updated." : "Employee added.");
+      await loadData();
+    } catch (employeeError) {
+      setError(employeeError instanceof Error ? employeeError.message : "Could not save employee");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteEmployee(employeeId: string) {
+    setSaving(true);
+    setNotice("");
+    setError("");
+    try {
+      await apiRequest(`/employees/${employeeId}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+      setNotice("Employee removed or marked inactive.");
+      await loadData();
+    } catch (employeeError) {
+      setError(employeeError instanceof Error ? employeeError.message : "Could not remove employee");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (loading) return <View style={styles.center}><ActivityIndicator color={colors.cyan} /></View>;
 
   return (
@@ -231,6 +309,8 @@ export function OwnerSalonScreen({ token }: { token: string }) {
       <Text style={styles.section}>SERVICE MANAGEMENT</Text>
       {salons.length ? salons.map((salon) => {
         const form = serviceFormFor(salon.id);
+        const employeeForm = employeeFormFor(salon.id);
+        const salonEmployees = employees.filter((employee) => employee.salonId === salon.id);
         return (
           <View style={styles.salonCard} key={salon.id}>
             <View style={styles.salonTop}>
@@ -261,6 +341,30 @@ export function OwnerSalonScreen({ token }: { token: string }) {
                 <TextInput value={form.durationMin} onChangeText={(durationMin) => updateServiceForm(salon.id, { durationMin })} placeholder="Duration min" placeholderTextColor={colors.placeholder} keyboardType="number-pad" style={styles.input} />
               </View>
               <TouchableOpacity disabled={saving} onPress={() => void saveService(salon.id)} style={styles.primary}><Text style={styles.primaryText}>{editingService?.salonId === salon.id ? "SAVE SERVICE" : "ADD SERVICE"}</Text></TouchableOpacity>
+            </View>
+
+            <Text style={styles.subsection}>EMPLOYEES / STYLISTS</Text>
+            {salonEmployees.length ? salonEmployees.map((employee) => (
+              <View style={styles.serviceRow} key={employee.id}>
+                <View style={styles.copy}>
+                  <Text style={styles.serviceName}>{employee.name}</Text>
+                  <Text style={employee.isActive ? styles.verified : styles.pending}>{employee.isActive ? "ACTIVE" : "INACTIVE"}</Text>
+                  <Text style={styles.meta}>{[employee.roleTitle, employee.specialties].filter(Boolean).join(" | ") || "Stylist details not added"}</Text>
+                  <Text style={styles.meta}>{[employee.phone, employee.email].filter(Boolean).join(" | ")}</Text>
+                </View>
+                <TouchableOpacity onPress={() => startEditEmployee(salon.id, employee)} style={styles.smallAction}><Text style={styles.link}>EDIT</Text></TouchableOpacity>
+                <TouchableOpacity onPress={() => Alert.alert("Remove employee?", "Employees with bookings will be marked inactive.", [{ text: "Cancel" }, { text: "Remove", style: "destructive", onPress: () => void deleteEmployee(employee.id) }])} style={styles.smallAction}><Text style={styles.deleteLink}>DEL</Text></TouchableOpacity>
+              </View>
+            )) : <Text style={styles.empty}>No employees added yet.</Text>}
+            <View style={styles.serviceForm}>
+              <TextInput value={employeeForm.name} onChangeText={(name) => updateEmployeeForm(salon.id, { name })} placeholder="Employee name" placeholderTextColor={colors.placeholder} style={styles.input} />
+              <View style={styles.twoColumns}>
+                <TextInput value={employeeForm.phone} onChangeText={(phone) => updateEmployeeForm(salon.id, { phone })} placeholder="Phone" placeholderTextColor={colors.placeholder} keyboardType="phone-pad" style={styles.input} />
+                <TextInput value={employeeForm.email} onChangeText={(email) => updateEmployeeForm(salon.id, { email })} placeholder="Email" placeholderTextColor={colors.placeholder} keyboardType="email-address" autoCapitalize="none" style={styles.input} />
+              </View>
+              <TextInput value={employeeForm.roleTitle} onChangeText={(roleTitle) => updateEmployeeForm(salon.id, { roleTitle })} placeholder="Role title, e.g. Senior stylist" placeholderTextColor={colors.placeholder} style={styles.input} />
+              <TextInput value={employeeForm.specialties} onChangeText={(specialties) => updateEmployeeForm(salon.id, { specialties })} placeholder="Specialties" placeholderTextColor={colors.placeholder} style={styles.input} />
+              <TouchableOpacity disabled={saving} onPress={() => void saveEmployee(salon.id)} style={styles.primary}><Text style={styles.primaryText}>{editingEmployee?.salonId === salon.id ? "SAVE EMPLOYEE" : "ADD EMPLOYEE"}</Text></TouchableOpacity>
             </View>
           </View>
         );
@@ -305,6 +409,7 @@ function createStyles(colors: ThemeColors) {
     name: { color: colors.text, fontSize: 14, fontWeight: "800", marginTop: 2 },
     meta: { color: colors.muted, fontSize: 10, marginTop: 6, lineHeight: 15 },
     serviceRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border },
+    subsection: { color: colors.text, fontSize: 11, fontWeight: "900", letterSpacing: 1.1, marginTop: 16, marginBottom: 6 },
     serviceName: { color: colors.text, fontSize: 13, fontWeight: "800" },
     smallAction: { minWidth: 44, minHeight: 36, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
     serviceForm: { marginTop: 10, padding: 12, borderWidth: 1, borderColor: colors.heroBorder, backgroundColor: colors.panelRaised },
