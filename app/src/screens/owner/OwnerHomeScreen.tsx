@@ -176,13 +176,16 @@ export function OwnerHomeScreen({ token }: { token: string }) {
   }
 
   const activeBookings = bookings.filter((booking) => ["PENDING", "ACCEPTED"].includes(booking.status));
+  const requestBookings = bookings.filter((booking) => booking.status === "PENDING");
+  const scheduledBookings = bookings.filter((booking) => booking.status === "ACCEPTED");
+  const historyBookings = bookings.filter((booking) => !["PENDING", "ACCEPTED"].includes(booking.status));
   const paidEarnings = bookings.filter((booking) => booking.payment?.status === "PAID").reduce((sum, booking) => sum + (booking.payment?.merchantAmount ?? 0), 0);
 
   if (loading) return <View style={styles.center}><ActivityIndicator color={colors.cyan} /></View>;
 
   return (
     <KeyboardAwareScreen contentContainerStyle={styles.page}>
-      <ScreenHeader eyebrow="PARTNER CONSOLE // MERCHANT" title="Booking requests" subtitle="Accept requests, complete services, and track payable earnings." />
+      <ScreenHeader eyebrow="PARTNER CONSOLE // MERCHANT" title="Booking management" subtitle="Accept requests, schedule visits, assign stylists, and close service by online payment or collected cash." />
       <View style={styles.grid}>
         <Metric styles={styles} label="MERCHANT EARNINGS" value={`INR ${paidEarnings}`} />
         <Metric styles={styles} label="ACTIVE REQUESTS" value={String(activeBookings.length)} />
@@ -190,8 +193,9 @@ export function OwnerHomeScreen({ token }: { token: string }) {
       {!!notice && <Text style={styles.notice}>{notice}</Text>}
       {!!error && <Text style={styles.error}>{error}</Text>}
 
-      <Text style={styles.section}>REQUEST QUEUE</Text>
-      {bookings.length ? bookings.map((booking) => (
+      <Text style={styles.section}>NEW REQUESTS</Text>
+      {!requestBookings.length && <Text style={styles.empty}>No new booking requests.</Text>}
+      {requestBookings.map((booking) => (
         <View style={styles.card} key={booking.id}>
           <View style={styles.top}>
             <View style={styles.copy}>
@@ -229,9 +233,10 @@ export function OwnerHomeScreen({ token }: { token: string }) {
           </View>}
 
           {booking.status === "ACCEPTED" && <View style={styles.actions}>
-            <TouchableOpacity disabled={saving} onPress={() => Alert.alert("Close for online payment?", "This completes the service and lets the client pay online in the app.", [{ text: "Cancel" }, { text: "Close online", onPress: () => void updateStatus(booking.id, "COMPLETED") }])} style={styles.primary}><Text style={styles.primaryText}>ONLINE</Text></TouchableOpacity>
-            <TouchableOpacity disabled={saving} onPress={() => { setCashBookingId(booking.id); setCashRemark(""); }} style={styles.action}><Text style={styles.link}>CASH</Text></TouchableOpacity>
+            <TouchableOpacity disabled={saving} onPress={() => Alert.alert("Close for online payment?", "This marks service complete. The client will pay online in the app, then admin brokerage and merchant amount are tracked.", [{ text: "Cancel" }, { text: "Close online", onPress: () => void updateStatus(booking.id, "COMPLETED") }])} style={styles.primary}><Text style={styles.primaryText}>CLOSE ONLINE</Text></TouchableOpacity>
+            <TouchableOpacity disabled={saving} onPress={() => { setCashBookingId(booking.id); setCashRemark(""); }} style={styles.action}><Text style={styles.link}>CLOSE CASH</Text></TouchableOpacity>
             <TouchableOpacity disabled={saving} onPress={() => startReschedule(booking)} style={styles.action}><Text style={styles.link}>RESCHEDULE</Text></TouchableOpacity>
+            <TouchableOpacity disabled={saving} onPress={() => Alert.alert("Cancel booking?", "This will cancel the accepted booking request.", [{ text: "Back" }, { text: "Cancel booking", style: "destructive", onPress: () => void updateStatus(booking.id, "CANCELLED") }])} style={styles.action}><Text style={styles.deleteLink}>CANCEL</Text></TouchableOpacity>
           </View>}
 
           {cashBookingId === booking.id && <View style={styles.cashPanel}>
@@ -248,7 +253,88 @@ export function OwnerHomeScreen({ token }: { token: string }) {
             <TouchableOpacity disabled={saving} onPress={() => void submitReschedule()} style={styles.primary}><Text style={styles.primaryText}>SEND NEW TIME</Text></TouchableOpacity>
           </View>}
         </View>
-      )) : <Text style={styles.empty}>No merchant bookings yet.</Text>}
+      ))}
+
+      <Text style={styles.section}>SCHEDULED BOOKINGS</Text>
+      {!scheduledBookings.length && <Text style={styles.empty}>No scheduled bookings.</Text>}
+      {scheduledBookings.map((booking) => (
+        <View style={styles.card} key={booking.id}>
+          <View style={styles.top}>
+            <View style={styles.copy}>
+              <Text style={styles.id}>{booking.id.slice(0, 8).toUpperCase()}</Text>
+              <Text style={styles.name}>{serviceNames(booking)}</Text>
+              <Text style={styles.meta}>{new Date(booking.scheduledAt).toLocaleString()}</Text>
+              <Text style={styles.meta}>Location: {booking.address}</Text>
+              <Text style={booking.employee ? styles.assigned : styles.privateText}>Assigned: {booking.employee?.name ?? "Not assigned"}</Text>
+              {booking.client ? <Text style={styles.client}>Client: {booking.client.name ?? "Client"} | {booking.client.phone}{booking.client.email ? ` | ${booking.client.email}` : ""}</Text> : null}
+            </View>
+            <View style={styles.side}>
+              <Text style={styles.status}>{booking.status}</Text>
+              <Text style={styles.amount}>INR {booking.totalAmount}</Text>
+            </View>
+          </View>
+
+          {booking.salon?.id && <View style={styles.assignPanel}>
+            <Text style={styles.label}>ASSIGN STYLIST</Text>
+            <View style={styles.employeeChips}>
+              {employees.filter((employee) => employee.isActive && employee.salonId === booking.salon?.id).map((employee) => (
+                <TouchableOpacity disabled={saving} onPress={() => void assignEmployee(booking.id, employee.id)} style={[styles.employeeChip, booking.employee?.id === employee.id && styles.employeeChipActive]} key={employee.id}>
+                  <Text style={[styles.employeeChipText, booking.employee?.id === employee.id && styles.employeeChipTextActive]}>{employee.name}</Text>
+                </TouchableOpacity>
+              ))}
+              {booking.employee && <TouchableOpacity disabled={saving} onPress={() => void assignEmployee(booking.id, null)} style={styles.employeeChip}><Text style={styles.deleteLink}>CLEAR</Text></TouchableOpacity>}
+            </View>
+            {!employees.some((employee) => employee.isActive && employee.salonId === booking.salon?.id) && <Text style={styles.empty}>Add employees from Salon setup first.</Text>}
+          </View>}
+
+          <View style={styles.closeInfo}>
+            <Text style={styles.closeTitle}>CLOSE REQUEST</Text>
+            <Text style={styles.closeText}>After service completion, close online so the client pays in app, or close cash with a collection remark for admin records.</Text>
+          </View>
+          <View style={styles.actions}>
+            <TouchableOpacity disabled={saving} onPress={() => Alert.alert("Close for online payment?", "This marks service complete. The client will pay online in the app.", [{ text: "Cancel" }, { text: "Close online", onPress: () => void updateStatus(booking.id, "COMPLETED") }])} style={styles.primary}><Text style={styles.primaryText}>CLOSE ONLINE</Text></TouchableOpacity>
+            <TouchableOpacity disabled={saving} onPress={() => { setCashBookingId(booking.id); setCashRemark(""); }} style={styles.action}><Text style={styles.link}>CLOSE CASH</Text></TouchableOpacity>
+          </View>
+          <View style={styles.actions}>
+            <TouchableOpacity disabled={saving} onPress={() => startReschedule(booking)} style={styles.action}><Text style={styles.link}>RESCHEDULE</Text></TouchableOpacity>
+            <TouchableOpacity disabled={saving} onPress={() => Alert.alert("Cancel booking?", "This will cancel the accepted booking request.", [{ text: "Back" }, { text: "Cancel booking", style: "destructive", onPress: () => void updateStatus(booking.id, "CANCELLED") }])} style={styles.action}><Text style={styles.deleteLink}>CANCEL</Text></TouchableOpacity>
+          </View>
+
+          {cashBookingId === booking.id && <View style={styles.cashPanel}>
+            <Text style={styles.label}>CASH COLLECTION REMARK</Text>
+            <TextInput value={cashRemark} onChangeText={setCashRemark} placeholder="Example: Collected full cash from client" placeholderTextColor={colors.placeholder} style={styles.cashInput} multiline />
+            <TouchableOpacity disabled={saving} onPress={() => void closeWithCash(booking.id)} style={styles.primary}><Text style={styles.primaryText}>CLOSE AS CASH COLLECTED</Text></TouchableOpacity>
+          </View>}
+
+          {reschedulingId === booking.id && <View style={styles.reschedulePanel}>
+            <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.picker}><Text style={styles.label}>NEW DATE</Text><Text style={styles.value}>{rescheduleDate || "Select date"}</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowTimePicker(true)} style={styles.picker}><Text style={styles.label}>NEW TIME</Text><Text style={styles.value}>{rescheduleTime || "Select time"}</Text></TouchableOpacity>
+            <TouchableOpacity disabled={saving} onPress={() => void submitReschedule()} style={styles.primary}><Text style={styles.primaryText}>SEND NEW TIME</Text></TouchableOpacity>
+          </View>}
+        </View>
+      ))}
+
+      <Text style={styles.section}>CLOSED / HISTORY</Text>
+      {!historyBookings.length && <Text style={styles.empty}>No closed bookings yet.</Text>}
+      {historyBookings.map((booking) => (
+        <View style={styles.card} key={booking.id}>
+          <View style={styles.top}>
+            <View style={styles.copy}>
+              <Text style={styles.id}>{booking.id.slice(0, 8).toUpperCase()}</Text>
+              <Text style={styles.name}>{serviceNames(booking)}</Text>
+              <Text style={styles.meta}>{new Date(booking.scheduledAt).toLocaleString()}</Text>
+              <Text style={styles.meta}>Location: {booking.address}</Text>
+              {!!booking.payment?.method && <Text style={styles.cashNote}>Closed by: {booking.payment.method}{booking.payment.cashRemark ? ` | ${booking.payment.cashRemark}` : ""}</Text>}
+              {booking.status === "COMPLETED" && booking.payment?.status !== "PAID" && <Text style={styles.privateText}>Waiting for client online payment.</Text>}
+            </View>
+            <View style={styles.side}>
+              <Text style={styles.status}>{booking.status}</Text>
+              <Text style={styles.amount}>INR {booking.totalAmount}</Text>
+              {booking.payment?.status === "PAID" && <Text style={styles.paid}>{booking.payment.method ?? "PAID"}</Text>}
+            </View>
+          </View>
+        </View>
+      ))}
 
       {showDatePicker && <DateTimePicker value={dateValue ?? new Date()} mode="date" minimumDate={new Date()} display="default" onChange={updateDate} />}
       {showTimePicker && <DateTimePicker value={timeValue ?? new Date()} mode="time" display="default" onChange={updateTime} />}
@@ -288,20 +374,23 @@ function createStyles(colors: ThemeColors) {
     status: { color: colors.amber, fontSize: 9, fontWeight: "900" },
     amount: { color: colors.cyan, fontSize: 11, fontWeight: "800", marginTop: 8 },
     paid: { color: colors.green, fontSize: 9, fontWeight: "900", marginTop: 8 },
-    actions: { flexDirection: "row", gap: 8, marginTop: 12 },
+    actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
     assignPanel: { marginTop: 12, padding: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelRaised },
     employeeChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     employeeChip: { minHeight: 34, justifyContent: "center", paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
     employeeChipActive: { borderColor: colors.cyan, backgroundColor: colors.activePanel },
     employeeChipText: { color: colors.muted, fontSize: 10, fontWeight: "900" },
     employeeChipTextActive: { color: colors.cyan },
-    primary: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 42, paddingHorizontal: 12, backgroundColor: colors.cyan },
+    primary: { flexGrow: 1, flexBasis: 130, alignItems: "center", justifyContent: "center", minHeight: 42, paddingHorizontal: 12, backgroundColor: colors.cyan },
     primaryText: { color: colors.buttonText, fontWeight: "900", fontSize: 10, letterSpacing: 1 },
-    action: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 42, paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border },
+    action: { flexGrow: 1, flexBasis: 110, alignItems: "center", justifyContent: "center", minHeight: 42, paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border },
     link: { color: colors.cyan, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
     deleteLink: { color: colors.danger, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
     reschedulePanel: { marginTop: 12, padding: 12, borderWidth: 1, borderColor: colors.heroBorder, backgroundColor: colors.panelRaised },
     cashPanel: { marginTop: 12, padding: 12, borderWidth: 1, borderColor: colors.green, backgroundColor: colors.successPanel },
+    closeInfo: { marginTop: 12, padding: 10, borderWidth: 1, borderColor: colors.heroBorder, backgroundColor: colors.panelRaised },
+    closeTitle: { color: colors.text, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
+    closeText: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 6 },
     cashInput: { color: colors.text, minHeight: 70, padding: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, fontSize: 12, textAlignVertical: "top", marginBottom: 10 },
     cashNote: { color: colors.green, fontSize: 10, lineHeight: 15, marginTop: 10 },
     picker: { padding: 12, marginBottom: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
