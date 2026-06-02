@@ -8,12 +8,51 @@ import { HttpError } from "../../utils/http-error";
 
 const router = Router();
 
-router.get("/", asyncHandler(async (_req, res) => {
+function distanceKm(fromLat: number, fromLng: number, toLat: number, toLng: number) {
+  const earthRadiusKm = 6371;
+  const latDelta = ((toLat - fromLat) * Math.PI) / 180;
+  const lngDelta = ((toLng - fromLng) * Math.PI) / 180;
+  const fromLatRad = (fromLat * Math.PI) / 180;
+  const toLatRad = (toLat * Math.PI) / 180;
+  const a = Math.sin(latDelta / 2) ** 2 + Math.cos(fromLatRad) * Math.cos(toLatRad) * Math.sin(lngDelta / 2) ** 2;
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+router.get("/", asyncHandler(async (req, res) => {
+  const query = z.object({
+    lat: z.coerce.number().min(-90).max(90).optional(),
+    lng: z.coerce.number().min(-180).max(180).optional(),
+    radiusKm: z.coerce.number().positive().max(100).default(25),
+  }).parse(req.query);
+
   const salons = await prisma.salon.findMany({
     include: { services: true, reviews: { select: { rating: true } } },
     orderBy: { createdAt: "desc" },
   });
-  res.json(salons);
+
+  const withLocationMeta = salons.map((salon) => {
+    const rating = salon.reviews.length
+      ? salon.reviews.reduce((sum, review) => sum + review.rating, 0) / salon.reviews.length
+      : null;
+    const distance = query.lat !== undefined && query.lng !== undefined
+      ? distanceKm(query.lat, query.lng, salon.latitude, salon.longitude)
+      : null;
+
+    return {
+      ...salon,
+      rating,
+      reviewCount: salon.reviews.length,
+      distanceKm: distance === null ? null : Number(distance.toFixed(2)),
+    };
+  });
+
+  const nearbySalons = query.lat !== undefined && query.lng !== undefined
+    ? withLocationMeta
+        .filter((salon) => salon.distanceKm !== null && salon.distanceKm <= query.radiusKm)
+        .sort((a, b) => (a.distanceKm ?? Number.MAX_VALUE) - (b.distanceKm ?? Number.MAX_VALUE))
+    : withLocationMeta;
+
+  res.json(nearbySalons);
 }));
 
 router.get("/:id", asyncHandler(async (req, res) => {
