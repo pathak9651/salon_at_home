@@ -105,6 +105,7 @@ router.post("/login", asyncHandler(async (req, res) => {
   const identifier = data.identifier.toLowerCase();
   const user = await prisma.user.findFirst({ where: { OR: [{ email: identifier }, { phone: data.identifier }] } });
   if (!user?.password || !(await bcrypt.compare(data.password, user.password))) throw new HttpError(401, "Invalid email, phone, or password");
+  if (user.isSuspended) throw new HttpError(403, "Account suspended. Contact support.");
   if (!user.emailVerified && user.role !== UserRole.ADMIN) {
     return res.status(403).json({ error: "Verify your email before logging in", action: "VERIFY_ACCOUNT", email: user.email });
   }

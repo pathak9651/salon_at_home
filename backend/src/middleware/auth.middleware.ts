@@ -19,11 +19,12 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     const payload = jwt.verify(token, env.JWT_SECRET) as TokenPayload;
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, role: true, sessionVersion: true },
+      select: { id: true, role: true, sessionVersion: true, isSuspended: true },
     });
     if (!user || user.sessionVersion !== payload.sessionVersion) {
       return next(new HttpError(401, "Invalid or expired token"));
     }
+    if (user.isSuspended) return next(new HttpError(403, "Account suspended"));
     req.user = { id: user.id, role: user.role };
     next();
   } catch {
