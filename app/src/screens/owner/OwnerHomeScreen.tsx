@@ -1,7 +1,9 @@
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { apiRequest } from "../../api/client";
+import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { apiAssetUrl, API_URL, apiRequest } from "../../api/client";
 import { ThemeColors, useTheme } from "../../utils/theme";
 import { ScreenHeader } from "../common/ScreenHeader";
 
@@ -18,12 +20,46 @@ type Booking = {
   payment?: { status: string; method?: string | null; platformFee: number; merchantAmount: number; cashRemark?: string | null } | null;
 };
 
+type Salon = {
+  id: string;
+  name: string;
+  description?: string | null;
+  address: string;
+  latitude: number;
+  longitude: number;
+  imageUrl?: string | null;
+  isVerified: boolean;
+  images: Array<{ id: string; url: string; caption?: string | null }>;
+  services: Array<{ id: string; name: string; price: number; durationMin: number }>;
+  owner?: { name?: string | null; phone: string; email?: string | null; emailVerified: boolean };
+};
+
+type Profile = {
+  name?: string | null;
+  phone: string;
+  email?: string | null;
+  emailVerified: boolean;
+};
+
+const emptySalonForm = {
+  name: "",
+  description: "",
+  address: "",
+  latitude: "",
+  longitude: "",
+};
+
 export function OwnerHomeScreen({ token }: { token: string }) {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [salons, setSalons] = useState<Salon[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [detectingLocation, setDetectingLocation] = useState(false);
+  const [salonForm, setSalonForm] = useState(emptySalonForm);
+  const [salonImages, setSalonImages] = useState<ImagePicker.ImagePickerAsset[]>([]);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [reschedulingId, setReschedulingId] = useState<string | null>(null);
@@ -37,8 +73,27 @@ export function OwnerHomeScreen({ token }: { token: string }) {
   const [cashRemark, setCashRemark] = useState("");
 
   useEffect(() => {
-    void loadBookings();
+    void loadOwnerData();
   }, []);
+
+  async function loadOwnerData() {
+    setLoading(true);
+    setError("");
+    try {
+      const [nextBookings, nextSalons, nextProfile] = await Promise.all([
+        apiRequest<Booking[]>("/bookings", { headers: { Authorization: `Bearer ${token}` } }),
+        apiRequest<Salon[]>("/salons/mine", { headers: { Authorization: `Bearer ${token}` } }),
+        apiRequest<Profile>("/profile", { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      setBookings(nextBookings);
+      setSalons(nextSalons);
+      setProfile(nextProfile);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Could not load merchant workspace");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function loadBookings() {
     setLoading(true);
@@ -49,6 +104,108 @@ export function OwnerHomeScreen({ token }: { token: string }) {
       setError(loadError instanceof Error ? loadError.message : "Could not load merchant bookings");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function pickSalonImages() {
+    setNotice("");
+    setError("");
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setError("Allow photo access to upload salon images.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsMultipleSelection: true,
+      mediaTypes: ["images"],
+      quality: 0.82,
+      selectionLimit: 5,
+    });
+    if (!result.canceled) {
+      setSalonImages(result.assets.slice(0, 5));
+    }
+  }
+
+  async function detectSalonAddress() {
+    setDetectingLocation(true);
+    setNotice("");
+    setError("");
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) throw new Error("Allow location access to detect the salon address.");
+      const position = await Location.getCurrentPositionAsync({});
+      const places = await Location.reverseGeocodeAsync(position.coords);
+      const place = places[0];
+      const address = [
+        place?.name,
+        place?.street,
+        place?.district,
+        place?.city,
+        place?.region,
+        place?.postalCode,
+      ].filter(Boolean).join(", ");
+      setSalonForm((current) => ({
+        ...current,
+        address: address || current.address,
+        latitude: position.coords.latitude.toFixed(6),
+        longitude: position.coords.longitude.toFixed(6),
+      }));
+      setNotice("Location detected. Review the salon address before registering.");
+    } catch (locationError) {
+      setError(locationError instanceof Error ? locationError.message : "Could not detect salon location");
+    } finally {
+      setDetectingLocation(false);
+    }
+  }
+
+  async function uploadSalonImage(salonId: string, asset: ImagePicker.ImagePickerAsset) {
+    const image = await fetch(asset.uri);
+    const body = await image.blob();
+    const response = await fetch(`${API_URL}/salons/${salonId}/images/upload`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": asset.mimeType ?? "image/jpeg",
+      },
+      body,
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error ?? "Could not upload salon image");
+    }
+  }
+
+  async function registerSalon() {
+    setSaving(true);
+    setNotice("");
+    setError("");
+    try {
+      if (!salonForm.name.trim()) throw new Error("Add the salon name");
+      if (!salonForm.address.trim()) throw new Error("Add the salon address");
+      if (!salonForm.latitude.trim() || !salonForm.longitude.trim()) throw new Error("Add latitude and longitude or auto-detect location");
+
+      const created = await apiRequest<Salon>("/salons", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: salonForm.name,
+          description: salonForm.description,
+          address: salonForm.address,
+          latitude: Number(salonForm.latitude),
+          longitude: Number(salonForm.longitude),
+        }),
+      });
+      for (const image of salonImages) {
+        await uploadSalonImage(created.id, image);
+      }
+      setSalonForm(emptySalonForm);
+      setSalonImages([]);
+      setNotice("Salon registered successfully. Admin verification is pending.");
+      await loadOwnerData();
+    } catch (registerError) {
+      setError(registerError instanceof Error ? registerError.message : "Could not register salon");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -155,6 +312,44 @@ export function OwnerHomeScreen({ token }: { token: string }) {
       {!!notice && <Text style={styles.notice}>{notice}</Text>}
       {!!error && <Text style={styles.error}>{error}</Text>}
 
+      <Text style={styles.section}>SALON REGISTRATION</Text>
+      <View style={styles.formCard}>
+        <View style={styles.contactPanel}>
+          <Text style={styles.label}>CONTACT INFORMATION</Text>
+          <Text style={styles.contactText}>{profile?.name ?? "Owner"} | {profile?.phone ?? "Phone not added"}</Text>
+          <Text style={profile?.emailVerified ? styles.verified : styles.pending}>{profile?.emailVerified ? "EMAIL VERIFIED" : "EMAIL VERIFICATION PENDING"}</Text>
+        </View>
+        <TextInput value={salonForm.name} onChangeText={(name) => setSalonForm((current) => ({ ...current, name }))} placeholder="Salon name" placeholderTextColor={colors.placeholder} style={styles.input} />
+        <TextInput value={salonForm.description} onChangeText={(description) => setSalonForm((current) => ({ ...current, description }))} placeholder="Salon details and specialties" placeholderTextColor={colors.placeholder} style={[styles.input, styles.textArea]} multiline />
+        <View style={styles.addressRow}>
+          <TextInput value={salonForm.address} onChangeText={(address) => setSalonForm((current) => ({ ...current, address }))} placeholder="Salon address" placeholderTextColor={colors.placeholder} style={[styles.input, styles.addressInput]} multiline />
+          <TouchableOpacity disabled={detectingLocation} onPress={() => void detectSalonAddress()} style={styles.locationButton}>
+            {detectingLocation ? <ActivityIndicator color={colors.cyan} /> : <Text style={styles.locationText}>LOC</Text>}
+          </TouchableOpacity>
+        </View>
+        <View style={styles.twoColumns}>
+          <TextInput value={salonForm.latitude} onChangeText={(latitude) => setSalonForm((current) => ({ ...current, latitude }))} placeholder="Latitude" placeholderTextColor={colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
+          <TextInput value={salonForm.longitude} onChangeText={(longitude) => setSalonForm((current) => ({ ...current, longitude }))} placeholder="Longitude" placeholderTextColor={colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
+        </View>
+        <View style={styles.imageActions}>
+          <TouchableOpacity onPress={() => void pickSalonImages()} style={styles.action}><Text style={styles.link}>ADD IMAGES</Text></TouchableOpacity>
+          <TouchableOpacity disabled={saving} onPress={() => void registerSalon()} style={styles.primary}><Text style={styles.primaryText}>{saving ? "SAVING" : "REGISTER SALON"}</Text></TouchableOpacity>
+        </View>
+        {salonImages.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.previewStrip}>{salonImages.map((image) => <Image key={image.uri} source={{ uri: image.uri }} style={styles.previewImage} />)}</ScrollView> : null}
+      </View>
+
+      {salons.length ? salons.map((salon) => (
+        <View style={styles.salonCard} key={salon.id}>
+          {salon.imageUrl || salon.images[0]?.url ? <Image source={{ uri: apiAssetUrl(salon.imageUrl ?? salon.images[0]?.url) }} style={styles.salonThumb} /> : <View style={styles.salonFallback}><Text style={styles.id}>SA</Text></View>}
+          <View style={styles.copy}>
+            <Text style={styles.name}>{salon.name}</Text>
+            <Text style={salon.isVerified ? styles.verified : styles.pending}>{salon.isVerified ? "SALON VERIFIED" : "ADMIN VERIFICATION PENDING"}</Text>
+            <Text style={styles.meta}>{salon.address}</Text>
+            <Text style={styles.meta}>{salon.images.length} image(s) | {salon.services.length} service(s)</Text>
+          </View>
+        </View>
+      )) : <Text style={styles.empty}>No salon registered yet.</Text>}
+
       <Text style={styles.section}>REQUEST QUEUE</Text>
       {bookings.length ? bookings.map((booking) => (
         <View style={styles.card} key={booking.id}>
@@ -226,6 +421,24 @@ function createStyles(colors: ThemeColors) {
     notice: { color: colors.green, fontSize: 11, marginTop: 14 },
     error: { color: colors.danger, fontSize: 11, marginTop: 14 },
     section: { color: colors.text, fontSize: 12, fontWeight: "800", letterSpacing: 1.4, marginTop: 24, marginBottom: 10 },
+    formCard: { padding: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    contactPanel: { padding: 12, marginBottom: 10, borderWidth: 1, borderColor: colors.heroBorder, backgroundColor: colors.panelRaised },
+    contactText: { color: colors.text, fontSize: 12, fontWeight: "700", lineHeight: 18 },
+    verified: { color: colors.green, fontSize: 9, fontWeight: "900", letterSpacing: 1, marginTop: 7 },
+    pending: { color: colors.amber, fontSize: 9, fontWeight: "900", letterSpacing: 1, marginTop: 7 },
+    input: { flex: 1, color: colors.text, minHeight: 42, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelRaised, fontSize: 12 },
+    textArea: { minHeight: 74, textAlignVertical: "top" },
+    addressRow: { flexDirection: "row", alignItems: "stretch", gap: 8 },
+    addressInput: { minHeight: 70, textAlignVertical: "top" },
+    locationButton: { width: 46, height: 46, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan, backgroundColor: colors.panelRaised },
+    locationText: { color: colors.cyan, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
+    twoColumns: { flexDirection: "row", gap: 8 },
+    imageActions: { flexDirection: "row", gap: 8, marginTop: 2 },
+    previewStrip: { marginTop: 10 },
+    previewImage: { width: 78, height: 78, marginRight: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelRaised },
+    salonCard: { flexDirection: "row", gap: 12, padding: 12, marginTop: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    salonThumb: { width: 72, height: 72, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelRaised },
+    salonFallback: { width: 72, height: 72, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelRaised },
     card: { padding: 14, marginBottom: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
     top: { flexDirection: "row", justifyContent: "space-between", gap: 10 },
     copy: { flex: 1 },

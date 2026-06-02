@@ -1,12 +1,21 @@
+import { randomUUID } from "crypto";
+import { mkdir, writeFile } from "fs/promises";
+import path from "path";
 import { UserRole } from "@prisma/client";
-import { Router } from "express";
+import express, { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../../config/prisma";
 import { requireAuth, requireRole } from "../../middleware/auth.middleware";
+import { requireImageUpload } from "../../middleware/upload.middleware";
 import { asyncHandler } from "../../utils/async-handler";
 import { HttpError } from "../../utils/http-error";
 
 const router = Router();
+
+const imageUrlSchema = z.string().trim().min(1).refine((value) => {
+  if (value.startsWith("/uploads/")) return true;
+  return /^https?:\/\//i.test(value);
+}, "Image must be an uploaded image path or a valid URL");
 
 function distanceKm(fromLat: number, fromLng: number, toLat: number, toLng: number) {
   const earthRadiusKm = 6371;
@@ -73,6 +82,18 @@ router.get("/", asyncHandler(async (req, res) => {
   res.json(nearbySalons.filter((salon) => query.minRating === undefined || (salon.rating ?? 0) >= query.minRating));
 }));
 
+router.get("/mine", requireAuth, requireRole(UserRole.OWNER), asyncHandler(async (req, res) => {
+  res.json(await prisma.salon.findMany({
+    where: { ownerId: req.user!.id },
+    include: {
+      images: true,
+      services: true,
+      owner: { select: { name: true, phone: true, email: true, emailVerified: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  }));
+}));
+
 router.get("/:id", asyncHandler(async (req, res) => {
   const salon = await prisma.salon.findUnique({
     where: { id: String(req.params.id) },
@@ -93,26 +114,53 @@ router.get("/:id", asyncHandler(async (req, res) => {
 
 router.post("/", requireAuth, requireRole(UserRole.OWNER), asyncHandler(async (req, res) => {
   const data = z.object({
-    name: z.string().min(2),
-    description: z.string().optional(),
-    address: z.string().min(5),
-    latitude: z.number(),
-    longitude: z.number(),
-    imageUrl: z.string().url().optional(),
-    images: z.array(z.object({ url: z.string().url(), caption: z.string().optional() })).default([]),
+    name: z.string().trim().min(2),
+    description: z.string().trim().optional().or(z.literal("")),
+    address: z.string().trim().min(5),
+    latitude: z.coerce.number().min(-90).max(90),
+    longitude: z.coerce.number().min(-180).max(180),
+    imageUrl: imageUrlSchema.optional(),
+    images: z.array(z.object({ url: imageUrlSchema, caption: z.string().trim().optional() })).default([]),
   }).parse(req.body);
   const { images, ...salonData } = data;
   res.status(201).json(await prisma.salon.create({
-    data: { ...salonData, ownerId: req.user!.id, images: { create: images } },
-    include: { images: true },
+    data: { ...salonData, description: salonData.description || null, ownerId: req.user!.id, images: { create: images } },
+    include: { images: true, services: true, owner: { select: { name: true, phone: true, email: true, emailVerified: true } } },
   }));
 }));
 
 router.post("/:id/images", requireAuth, requireRole(UserRole.OWNER), asyncHandler(async (req, res) => {
   const salon = await prisma.salon.findFirst({ where: { id: String(req.params.id), ownerId: req.user!.id } });
   if (!salon) throw new HttpError(404, "Salon not found");
-  const data = z.object({ url: z.string().url(), caption: z.string().trim().optional() }).parse(req.body);
+  const data = z.object({ url: imageUrlSchema, caption: z.string().trim().optional() }).parse(req.body);
   res.status(201).json(await prisma.salonImage.create({ data: { ...data, salonId: salon.id } }));
+}));
+
+router.post("/:id/images/upload", requireAuth, requireRole(UserRole.OWNER), express.raw({ type: ["image/jpeg", "image/png", "image/webp"], limit: "5mb" }), requireImageUpload, asyncHandler(async (req, res) => {
+  const salon = await prisma.salon.findFirst({ where: { id: String(req.params.id), ownerId: req.user!.id } });
+  if (!salon) throw new HttpError(404, "Salon not found");
+  if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new HttpError(400, "Upload an image file");
+
+  const extensionByType: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+  };
+  const extension = extensionByType[req.header("content-type") ?? ""];
+  if (!extension) throw new HttpError(415, "Only JPG, PNG, or WEBP images are supported");
+
+  const uploadDir = path.join(process.cwd(), "uploads", "salons");
+  await mkdir(uploadDir, { recursive: true });
+  const filename = `${salon.id}-${randomUUID()}.${extension}`;
+  await writeFile(path.join(uploadDir, filename), req.body);
+
+  const image = await prisma.salonImage.create({
+    data: { salonId: salon.id, url: `/uploads/salons/${filename}`, caption: "Salon photo" },
+  });
+  if (!salon.imageUrl) {
+    await prisma.salon.update({ where: { id: salon.id }, data: { imageUrl: image.url } });
+  }
+  res.status(201).json(image);
 }));
 
 router.post("/:id/services", requireAuth, requireRole(UserRole.OWNER), asyncHandler(async (req, res) => {
