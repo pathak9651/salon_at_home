@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { useEffect, useState } from "react";
@@ -248,7 +249,6 @@ export function ProfileScreen({
             <Text style={styles.status}>{profile?.emailVerified ? "VERIFIED SESSION" : "EMAIL NOT VERIFIED"}</Text>
           </View>
         </View>
-        <TouchableOpacity onPress={() => void uploadPhoto()} style={styles.secondary}><Text style={styles.secondaryText}>UPLOAD PROFILE PHOTO</Text></TouchableOpacity>
 
         {!!notice && <Text style={styles.notice}>{notice}</Text>}
         {!!error && <Text style={styles.error}>{error}</Text>}
@@ -278,8 +278,8 @@ export function ProfileScreen({
         )) : <Text style={styles.empty}>No saved addresses yet.</Text>}
 
         <View style={styles.addressForm}>
-          <TouchableOpacity disabled={detectingLocation} onPress={() => void detectAddress()} style={styles.secondary}>
-            {detectingLocation ? <ActivityIndicator color={colors.cyan} /> : <Text style={styles.secondaryText}>AUTO DETECT LOCATION</Text>}
+          <TouchableOpacity accessibilityLabel="Auto detect location" accessibilityRole="button" disabled={detectingLocation} onPress={() => void detectAddress()} style={styles.locationButton}>
+            {detectingLocation ? <ActivityIndicator color={colors.cyan} /> : <Ionicons name="locate" size={22} color={colors.cyan} />}
           </TouchableOpacity>
           <Field label="LABEL" value={address.label} onChangeText={(label) => setAddress((current) => ({ ...current, label }))} placeholder="Home, Work, Studio" />
           <Field label="ADDRESS LINE 1" value={address.line1} onChangeText={(line1) => setAddress((current) => ({ ...current, line1 }))} placeholder="House number and street" />
@@ -292,12 +292,6 @@ export function ProfileScreen({
             <Text style={styles.checkboxText}>Set as default address</Text>
           </TouchableOpacity>
           <TouchableOpacity disabled={saving} onPress={() => void addAddress()} style={styles.primary}><Text style={styles.primaryText}>SAVE ADDRESS</Text></TouchableOpacity>
-        </View>
-
-        <Text style={styles.section}>SECURITY</Text>
-        <View style={styles.security}>
-          <Text style={styles.securityTitle}>PASSWORD PROTECTED</Text>
-          <Text style={styles.securityText}>Your active session is stored securely on this device. Logging out invalidates its access token immediately.</Text>
         </View>
 
         <TouchableOpacity onPress={() => void onLogout()} style={styles.logout}>
@@ -342,8 +336,8 @@ function createStyles(colors: ThemeColors) {
   row: { padding: 14, marginBottom: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
   value: { color: colors.text, fontSize: 13, fontWeight: "700", marginTop: 7 },
   highlight: { color: colors.cyan, fontSize: 13, fontWeight: "800", marginTop: 7 },
-  primary: { alignItems: "center", justifyContent: "center", minHeight: 44, marginTop: 9, padding: 12, backgroundColor: colors.cyan },
-  primaryText: { color: colors.buttonText, fontWeight: "900", fontSize: 10, letterSpacing: 1.2 },
+  primary: { alignSelf: "flex-start", alignItems: "center", justifyContent: "center", minHeight: 36, marginTop: 7, paddingVertical: 9, paddingHorizontal: 16, backgroundColor: colors.cyan },
+  primaryText: { color: colors.buttonText, fontWeight: "900", fontSize: 9, letterSpacing: 1 },
   secondary: { alignItems: "center", padding: 12, marginTop: 10, borderWidth: 1, borderColor: colors.cyan },
   secondaryText: { color: colors.cyan, fontWeight: "900", fontSize: 10, letterSpacing: 1.1 },
   notice: { color: colors.green, fontSize: 11, marginTop: 14 },
@@ -358,14 +352,12 @@ function createStyles(colors: ThemeColors) {
   deleteLink: { color: colors.danger, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
   empty: { color: colors.muted, fontSize: 12, paddingVertical: 8 },
   addressForm: { padding: 14, marginTop: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bar },
+  locationButton: { alignSelf: "flex-end", width: 44, height: 44, alignItems: "center", justifyContent: "center", marginBottom: 10, borderWidth: 1, borderColor: colors.cyan, backgroundColor: colors.panel },
   twoColumns: { flexDirection: "row", gap: 10 },
   checkbox: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4, marginBottom: 6 },
   checkboxBox: { width: 18, height: 18, borderWidth: 1, borderColor: colors.border },
   checkboxActive: { backgroundColor: colors.cyan, borderColor: colors.cyan },
   checkboxText: { color: colors.text, fontSize: 12, fontWeight: "700" },
-  security: { padding: 14, borderWidth: 1, borderColor: colors.warningBorder, backgroundColor: colors.warningPanel },
-  securityTitle: { color: colors.amber, fontSize: 10, fontWeight: "900", letterSpacing: 1.1 },
-  securityText: { color: colors.warningText, fontSize: 11, lineHeight: 18, marginTop: 8 },
   logout: { alignItems: "center", marginTop: 21, padding: 14, borderWidth: 1, borderColor: colors.danger, backgroundColor: colors.dangerPanel },
   logoutText: { color: colors.danger, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
   });

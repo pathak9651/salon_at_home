@@ -7,6 +7,7 @@
     "admin-panel"
   ],
   "scripts": {
+    "postinstall": "node scripts/patch-expo-image-picker-crop-label.cjs",
     "dev:backend": "npm run dev --workspace backend",
     "dev:app": "npm run start --workspace app",
     "dev:admin": "npm run dev --workspace admin-panel",
