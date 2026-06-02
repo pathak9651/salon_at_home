@@ -102,7 +102,7 @@ function AppContent() {
       </View>
       <View style={styles.content}>
         {tab === "profile" && <ProfileScreen token={session.token} user={session.user} onLogout={handleLogout} onUserUpdated={handleUserUpdated} />}
-        {tab === "home" && session.user.role === "CLIENT" && <ClientHomeScreen />}
+        {tab === "home" && session.user.role === "CLIENT" && <ClientHomeScreen token={session.token} />}
         {tab === "home" && session.user.role === "OWNER" && <OwnerHomeScreen />}
         {tab === "home" && session.user.role === "ADMIN" && <AdminHomeScreen />}
       </View>

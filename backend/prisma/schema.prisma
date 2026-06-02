@@ -106,6 +106,7 @@ model Service {
   salonId     String
   salon       Salon     @relation(fields: [salonId], references: [id])
   bookings    Booking[]
+  bookingItems BookingService[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
@@ -114,6 +115,7 @@ model Booking {
   id          String        @id @default(uuid())
   scheduledAt DateTime
   address     String
+  instructions String?
   totalAmount Int
   status      BookingStatus @default(PENDING)
   clientId    String
@@ -122,10 +124,23 @@ model Booking {
   salon       Salon         @relation(fields: [salonId], references: [id])
   serviceId   String
   service     Service       @relation(fields: [serviceId], references: [id])
+  services    BookingService[]
   payment     Payment?
   review      Review?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+}
+
+model BookingService {
+  id        String  @id @default(uuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  serviceId String
+  service   Service @relation(fields: [serviceId], references: [id])
+  price     Int
+
+  @@unique([bookingId, serviceId])
+  @@index([serviceId])
 }
 
 model Payment {

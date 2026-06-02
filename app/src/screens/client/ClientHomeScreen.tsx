@@ -1,4 +1,5 @@
 import * as Location from "expo-location";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { apiRequest } from "../../api/client";
@@ -25,18 +26,35 @@ type Salon = {
   services: Service[];
 };
 
+type BookingConfirmation = {
+  id: string;
+  scheduledAt: string;
+  address: string;
+  instructions?: string | null;
+  totalAmount: number;
+  status: string;
+};
+
 const serviceFilters = ["Haircut", "Hair spa", "Skin care", "Grooming"];
 const ratingFilters = [0, 3, 4, 4.5];
 const distanceFilters = [5, 10, 25, 50];
 const priceFilters = [0, 500, 1000, 2000];
 
-export function ClientHomeScreen() {
+export function ClientHomeScreen({ token }: { token: string }) {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const [location, setLocation] = useState<Coordinates | null>(null);
   const [area, setArea] = useState("Detect your location");
   const [salons, setSalons] = useState<Salon[]>([]);
   const [selectedSalon, setSelectedSalon] = useState<Salon | null>(null);
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [bookingDate, setBookingDate] = useState("");
+  const [bookingTime, setBookingTime] = useState("");
+  const [bookingDateValue, setBookingDateValue] = useState<Date | null>(null);
+  const [bookingTimeValue, setBookingTimeValue] = useState<Date | null>(null);
+  const [bookingAddress, setBookingAddress] = useState("");
+  const [bookingInstructions, setBookingInstructions] = useState("");
+  const [bookingConfirmation, setBookingConfirmation] = useState<BookingConfirmation | null>(null);
   const [search, setSearch] = useState("");
   const [service, setService] = useState("");
   const [minRating, setMinRating] = useState(0);
@@ -46,6 +64,10 @@ export function ClientHomeScreen() {
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [loadingSalons, setLoadingSalons] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [bookingLoading, setBookingLoading] = useState(false);
+  const [bookingAddressLoading, setBookingAddressLoading] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -106,6 +128,8 @@ export function ClientHomeScreen() {
 
   async function openDetails(salon: Salon) {
     setSelectedSalon(salon);
+    setSelectedServiceIds([]);
+    setBookingConfirmation(null);
     setLoadingDetails(true);
     try {
       setSelectedSalon(await apiRequest<Salon>(`/salons/${salon.id}`));
@@ -120,6 +144,94 @@ export function ClientHomeScreen() {
     const destination = `${salon.latitude},${salon.longitude}`;
     const origin = location ? `&origin=${location.latitude},${location.longitude}` : "";
     await Linking.openURL(`https://www.google.com/maps/dir/?api=1${origin}&destination=${destination}&travelmode=driving`);
+  }
+
+  function toggleService(serviceId: string) {
+    setSelectedServiceIds((current) => current.includes(serviceId) ? current.filter((id) => id !== serviceId) : [...current, serviceId]);
+  }
+
+  async function confirmBooking(salon: Salon) {
+    setBookingLoading(true);
+    setError("");
+    setBookingConfirmation(null);
+    try {
+      if (!selectedServiceIds.length) throw new Error("Choose at least one service");
+      if (!bookingDate || !bookingTime) throw new Error("Choose preferred date and time");
+      if (!bookingAddress.trim()) throw new Error("Add your home service address");
+      const scheduledAt = new Date(`${bookingDate}T${bookingTime}:00`);
+      if (Number.isNaN(scheduledAt.getTime())) throw new Error("Enter date and time in the correct format");
+
+      const booking = await apiRequest<BookingConfirmation>("/bookings", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          salonId: salon.id,
+          serviceIds: selectedServiceIds,
+          scheduledAt: scheduledAt.toISOString(),
+          address: bookingAddress,
+          instructions: bookingInstructions || undefined,
+        }),
+      });
+      setBookingConfirmation(booking);
+    } catch (bookingError) {
+      setError(bookingError instanceof Error ? bookingError.message : "Could not confirm booking");
+    } finally {
+      setBookingLoading(false);
+    }
+  }
+
+  function autofillBookingTime() {
+    const nextSlot = new Date();
+    nextSlot.setHours(nextSlot.getHours() + 2, 0, 0, 0);
+    setBookingDateValue(nextSlot);
+    setBookingTimeValue(nextSlot);
+    setBookingDate(nextSlot.toISOString().slice(0, 10));
+    setBookingTime(`${String(nextSlot.getHours()).padStart(2, "0")}:${String(nextSlot.getMinutes()).padStart(2, "0")}`);
+  }
+
+  function updateBookingDate(_event: DateTimePickerEvent, selectedDate?: Date) {
+    setShowDatePicker(false);
+    if (!selectedDate) return;
+    setBookingDateValue(selectedDate);
+    setBookingDate(selectedDate.toISOString().slice(0, 10));
+  }
+
+  function updateBookingTime(_event: DateTimePickerEvent, selectedTime?: Date) {
+    setShowTimePicker(false);
+    if (!selectedTime) return;
+    setBookingTimeValue(selectedTime);
+    setBookingTime(`${String(selectedTime.getHours()).padStart(2, "0")}:${String(selectedTime.getMinutes()).padStart(2, "0")}`);
+  }
+
+  async function autofillBookingAddress() {
+    setBookingAddressLoading(true);
+    setError("");
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        setError("Allow location access to auto-fill your booking address.");
+        return;
+      }
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const [place] = await Location.reverseGeocodeAsync(position.coords);
+      if (!place) throw new Error("Could not detect your address");
+      const detectedAddress = [
+        [place.name, place.street].filter(Boolean).join(", "),
+        place.district,
+        place.city,
+        place.region,
+        place.postalCode,
+      ].filter(Boolean).join(", ");
+      setBookingAddress(detectedAddress);
+      if (!location) {
+        setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+        setArea([place.district, place.city, place.region].filter(Boolean).slice(0, 2).join(", ") || "Current location");
+      }
+    } catch (addressError) {
+      setError(addressError instanceof Error ? addressError.message : "Could not auto-fill address");
+    } finally {
+      setBookingAddressLoading(false);
+    }
   }
 
   const activeFilterCount = (radiusKm !== 25 ? 1 : 0) + (minRating ? 1 : 0) + (maxPrice ? 1 : 0) + (service ? 1 : 0);
@@ -138,17 +250,54 @@ export function ClientHomeScreen() {
         <Text style={styles.section}>SALON IMAGES</Text>
         {gallery.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false}>{gallery.map((url, index) => <Image key={`${url}-${index}`} source={{ uri: url }} style={styles.galleryImage} />)}</ScrollView> : <View style={styles.imagePlaceholder}><Text style={styles.empty}>No images uploaded yet.</Text></View>}
 
-        <Text style={styles.section}>AVAILABLE SERVICES</Text>
-        {selectedSalon.services.length ? selectedSalon.services.map((item) => (
-          <View style={styles.serviceRow} key={item.id}>
-            <View style={styles.salonCopy}>
-              <Text style={styles.name}>{item.name}</Text>
-              {!!item.description && <Text style={styles.meta}>{item.description}</Text>}
-              <Text style={styles.meta}>{item.durationMin} min</Text>
-            </View>
-            <Text style={styles.charge}>INR {item.price}</Text>
+        <Text style={styles.section}>BOOK AT HOME</Text>
+        <View style={styles.bookingPanel}>
+          <Text style={styles.stepLabel}>1. CHOOSE SERVICES</Text>
+          {selectedSalon.services.length ? selectedSalon.services.map((item) => (
+            <TouchableOpacity onPress={() => toggleService(item.id)} style={[styles.serviceRow, selectedServiceIds.includes(item.id) && styles.serviceSelected]} key={item.id}>
+              <View style={styles.checkCircle}><Text style={selectedServiceIds.includes(item.id) ? styles.checkActive : styles.checkInactive}>{selectedServiceIds.includes(item.id) ? "✓" : "+"}</Text></View>
+              <View style={styles.salonCopy}>
+                <Text style={styles.name}>{item.name}</Text>
+                {!!item.description && <Text style={styles.meta}>{item.description}</Text>}
+                <Text style={styles.meta}>{item.durationMin} min</Text>
+              </View>
+              <Text style={styles.charge}>INR {item.price}</Text>
+            </TouchableOpacity>
+          )) : <Text style={styles.empty}>No services listed.</Text>}
+
+          <Text style={styles.stepLabel}>2. SELECT DATE & TIME</Text>
+          <TouchableOpacity onPress={autofillBookingTime} style={styles.quickButton}><Text style={styles.secondaryText}>USE NEXT AVAILABLE SLOT</Text></TouchableOpacity>
+          <View style={styles.bookingStack}>
+            <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.bookingPicker}>
+              <Text style={styles.pickerLabel}>DATE</Text>
+              <Text style={bookingDate ? styles.pickerValue : styles.pickerPlaceholder}>{bookingDate || "Select date"}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowTimePicker(true)} style={styles.bookingPicker}>
+              <Text style={styles.pickerLabel}>TIME</Text>
+              <Text style={bookingTime ? styles.pickerValue : styles.pickerPlaceholder}>{bookingTime || "Select time"}</Text>
+            </TouchableOpacity>
           </View>
-        )) : <Text style={styles.empty}>No services listed.</Text>}
+          {showDatePicker && <DateTimePicker value={bookingDateValue ?? new Date()} mode="date" minimumDate={new Date()} display="default" onChange={updateBookingDate} />}
+          {showTimePicker && <DateTimePicker value={bookingTimeValue ?? new Date()} mode="time" display="default" onChange={updateBookingTime} />}
+
+          <Text style={styles.stepLabel}>3. ADD HOME ADDRESS</Text>
+          <TouchableOpacity disabled={bookingAddressLoading} onPress={() => void autofillBookingAddress()} style={styles.quickButton}>
+            {bookingAddressLoading ? <ActivityIndicator color={colors.cyan} /> : <Text style={styles.secondaryText}>AUTO DETECT ADDRESS</Text>}
+          </TouchableOpacity>
+          <TextInput value={bookingAddress} onChangeText={setBookingAddress} placeholder="Home service address" placeholderTextColor={colors.placeholder} style={[styles.bookingInput, styles.addressInput]} multiline />
+
+          <Text style={styles.stepLabel}>4. INSTRUCTIONS</Text>
+          <TextInput value={bookingInstructions} onChangeText={setBookingInstructions} placeholder="Booking instructions, access notes, preferences" placeholderTextColor={colors.placeholder} style={[styles.bookingInput, styles.instructionsInput]} multiline />
+          <View style={styles.bookingSummaryCard}>
+            <Text style={styles.summaryTitle}>BOOKING SUMMARY</Text>
+            <Text style={styles.summaryLine}>{selectedServiceIds.length || 0} service(s)</Text>
+            <Text style={styles.summaryAmount}>INR {selectedSalon.services.filter((item) => selectedServiceIds.includes(item.id)).reduce((sum, item) => sum + item.price, 0)}</Text>
+          </View>
+          {!!bookingConfirmation && <Text style={styles.success}>Booking confirmed: {bookingConfirmation.status} | INR {bookingConfirmation.totalAmount}</Text>}
+          <TouchableOpacity disabled={bookingLoading} onPress={() => void confirmBooking(selectedSalon)} style={styles.confirmButton}>
+            {bookingLoading ? <ActivityIndicator color={colors.buttonText} /> : <Text style={styles.primaryText}>CONFIRM BOOKING</Text>}
+          </TouchableOpacity>
+        </View>
         <TouchableOpacity onPress={() => void openMaps(selectedSalon)} style={styles.primary}><Text style={styles.primaryText}>OPEN IN GOOGLE MAPS</Text></TouchableOpacity>
       </ScrollView>
     );
@@ -260,7 +409,28 @@ function createStyles(colors: ThemeColors) {
     description: { color: colors.muted, fontSize: 12, lineHeight: 19, marginTop: 12 },
     galleryImage: { width: 180, height: 120, marginRight: 10, backgroundColor: colors.panelRaised },
     imagePlaceholder: { minHeight: 90, justifyContent: "center", padding: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
-    serviceRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    serviceRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
+    serviceSelected: { borderColor: colors.cyan, backgroundColor: colors.activePanel },
     charge: { color: colors.cyan, fontSize: 13, fontWeight: "900" },
+    checkCircle: { width: 30, height: 30, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan },
+    checkActive: { color: colors.cyan, fontSize: 18, fontWeight: "900" },
+    checkInactive: { color: colors.muted, fontSize: 18, fontWeight: "900" },
+    bookingPanel: { padding: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    stepLabel: { color: colors.amber, fontSize: 10, fontWeight: "900", letterSpacing: 1.2, marginTop: 14, marginBottom: 10 },
+    quickButton: { alignItems: "center", justifyContent: "center", minHeight: 42, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.cyan, marginBottom: 10 },
+    bookingStack: { gap: 0 },
+    bookingPicker: { padding: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, marginBottom: 10 },
+    pickerLabel: { color: colors.muted, fontSize: 9, fontWeight: "900", letterSpacing: 1, marginBottom: 6 },
+    pickerValue: { color: colors.text, fontSize: 15, fontWeight: "800" },
+    pickerPlaceholder: { color: colors.placeholder, fontSize: 15, fontWeight: "700" },
+    bookingInput: { color: colors.text, padding: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, fontSize: 13, marginBottom: 10 },
+    addressInput: { minHeight: 64, textAlignVertical: "top" },
+    instructionsInput: { minHeight: 78, textAlignVertical: "top" },
+    bookingSummaryCard: { padding: 14, marginTop: 4, marginBottom: 10, borderWidth: 1, borderColor: colors.heroBorder, backgroundColor: colors.panelRaised },
+    summaryTitle: { color: colors.muted, fontSize: 9, fontWeight: "900", letterSpacing: 1.2 },
+    summaryLine: { color: colors.text, fontSize: 12, fontWeight: "800", marginTop: 8 },
+    summaryAmount: { color: colors.cyan, fontSize: 20, fontWeight: "900", marginTop: 8 },
+    confirmButton: { alignItems: "center", justifyContent: "center", minHeight: 50, paddingHorizontal: 14, backgroundColor: colors.cyan, marginTop: 4 },
+    success: { color: colors.green, fontSize: 11, fontWeight: "800", marginBottom: 10 },
   });
 }

@@ -31,7 +31,8 @@
         {
           "locationWhenInUsePermission": "Salon At Home uses your location to auto-fill saved service addresses."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ]
   }
 }

@@ -17,7 +17,7 @@ router.get("/", asyncHandler(async (req, res) => {
     : { clientId: req.user!.id };
   res.json(await prisma.booking.findMany({
     where,
-    include: { salon: true, service: true, payment: true },
+    include: { salon: true, service: true, services: { include: { service: true } }, payment: true },
     orderBy: { scheduledAt: "desc" },
   }));
 }));
@@ -25,14 +25,34 @@ router.get("/", asyncHandler(async (req, res) => {
 router.post("/", requireRole(UserRole.CLIENT), asyncHandler(async (req, res) => {
   const data = z.object({
     salonId: z.string(),
-    serviceId: z.string(),
+    serviceId: z.string().optional(),
+    serviceIds: z.array(z.string()).min(1).max(8).optional(),
     scheduledAt: z.coerce.date().refine((date) => date > new Date(), "Choose a future time"),
     address: z.string().min(5),
+    instructions: z.string().trim().max(500).optional(),
   }).parse(req.body);
-  const service = await prisma.service.findFirst({ where: { id: data.serviceId, salonId: data.salonId } });
-  if (!service) throw new HttpError(404, "Service not found");
+
+  const serviceIds = [...new Set(data.serviceIds ?? (data.serviceId ? [data.serviceId] : []))];
+  if (!serviceIds.length) throw new HttpError(400, "Choose at least one service");
+  const services = await prisma.service.findMany({ where: { id: { in: serviceIds }, salonId: data.salonId } });
+  if (services.length !== serviceIds.length) throw new HttpError(404, "One or more services were not found");
+  const sortedServices = serviceIds.map((id) => services.find((service) => service.id === id)!);
+  const totalAmount = sortedServices.reduce((sum, service) => sum + service.price, 0);
+
   res.status(201).json(await prisma.booking.create({
-    data: { ...data, clientId: req.user!.id, totalAmount: service.price },
+    data: {
+      salonId: data.salonId,
+      serviceId: sortedServices[0].id,
+      scheduledAt: data.scheduledAt,
+      address: data.address,
+      instructions: data.instructions,
+      clientId: req.user!.id,
+      totalAmount,
+      services: {
+        create: sortedServices.map((service) => ({ serviceId: service.id, price: service.price })),
+      },
+    },
+    include: { salon: true, service: true, services: { include: { service: true } }, payment: true },
   }));
 }));
 
