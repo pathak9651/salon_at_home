@@ -9,6 +9,7 @@ import { ScreenHeader } from "../common/ScreenHeader";
 type Coordinates = { latitude: number; longitude: number };
 type Service = { id: string; name: string; description?: string | null; price: number; durationMin: number };
 type SalonImage = { id: string; url: string; caption?: string | null };
+type Review = { id: string; rating: number; comment?: string | null; createdAt: string; client?: { name?: string | null } };
 type Salon = {
   id: string;
   name: string;
@@ -24,6 +25,7 @@ type Salon = {
   minServicePrice?: number | null;
   images: SalonImage[];
   services: Service[];
+  reviews?: Review[];
 };
 
 type BookingConfirmation = {
@@ -273,6 +275,19 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
         <Text style={styles.section}>SALON IMAGES</Text>
         {gallery.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false}>{gallery.map((url, index) => <Image key={`${url}-${index}`} source={{ uri: url }} style={styles.galleryImage} />)}</ScrollView> : <View style={styles.imagePlaceholder}><Text style={styles.empty}>No images uploaded yet.</Text></View>}
 
+        <Text style={styles.section}>REVIEWS & RATINGS</Text>
+        <View style={styles.reviewSummary}>
+          <Text style={styles.reviewScore}>{selectedSalon.rating ? selectedSalon.rating.toFixed(1) : "NEW"}</Text>
+          <Text style={styles.reviewMeta}>{selectedSalon.reviewCount ?? 0} review(s)</Text>
+        </View>
+        {selectedSalon.reviews?.length ? selectedSalon.reviews.slice(0, 5).map((review) => (
+          <View style={styles.reviewCard} key={review.id}>
+            <Text style={styles.reviewStars}>{"★".repeat(review.rating)}{"☆".repeat(5 - review.rating)}</Text>
+            <Text style={styles.reviewAuthor}>{review.client?.name ?? "Client"} | {new Date(review.createdAt).toLocaleDateString()}</Text>
+            {!!review.comment && <Text style={styles.reviewComment}>{review.comment}</Text>}
+          </View>
+        )) : <Text style={styles.empty}>No reviews yet.</Text>}
+
         <Text style={styles.section}>BOOK AT HOME</Text>
         <View style={styles.bookingPanel}>
           <Text style={styles.stepLabel}>1. CHOOSE SERVICES</Text>
@@ -435,6 +450,13 @@ function createStyles(colors: ThemeColors) {
     description: { color: colors.muted, fontSize: 12, lineHeight: 19, marginTop: 12 },
     galleryImage: { width: 180, height: 120, marginRight: 10, backgroundColor: colors.panelRaised },
     imagePlaceholder: { minHeight: 90, justifyContent: "center", padding: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    reviewSummary: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: colors.heroBorder, backgroundColor: colors.panelRaised },
+    reviewScore: { color: colors.amber, fontSize: 24, fontWeight: "900" },
+    reviewMeta: { color: colors.text, fontSize: 12, fontWeight: "800" },
+    reviewCard: { padding: 13, marginBottom: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    reviewStars: { color: colors.amber, fontSize: 14, fontWeight: "900" },
+    reviewAuthor: { color: colors.muted, fontSize: 10, marginTop: 7 },
+    reviewComment: { color: colors.text, fontSize: 12, lineHeight: 18, marginTop: 8 },
     serviceRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
     serviceSelected: { borderColor: colors.cyan, backgroundColor: colors.activePanel },
     charge: { color: colors.cyan, fontSize: 13, fontWeight: "900" },

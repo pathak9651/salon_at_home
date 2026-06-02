@@ -76,7 +76,7 @@ router.get("/", asyncHandler(async (req, res) => {
 router.get("/:id", asyncHandler(async (req, res) => {
   const salon = await prisma.salon.findUnique({
     where: { id: String(req.params.id) },
-    include: { services: true, images: true, reviews: true },
+    include: { services: true, images: true, reviews: { include: { client: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" } } },
   });
   if (!salon) throw new HttpError(404, "Salon not found");
   const rating = salon.reviews.length

@@ -9,7 +9,11 @@ import { HttpError } from "../../utils/http-error";
 const router = Router();
 
 router.get("/salon/:salonId", asyncHandler(async (req, res) => {
-  res.json(await prisma.review.findMany({ where: { salonId: String(req.params.salonId) }, orderBy: { createdAt: "desc" } }));
+  res.json(await prisma.review.findMany({
+    where: { salonId: String(req.params.salonId) },
+    include: { client: { select: { id: true, name: true } } },
+    orderBy: { createdAt: "desc" },
+  }));
 }));
 
 router.post("/", requireAuth, asyncHandler(async (req, res) => {
@@ -20,10 +24,13 @@ router.post("/", requireAuth, asyncHandler(async (req, res) => {
   }).parse(req.body);
   const booking = await prisma.booking.findFirst({
     where: { id: data.bookingId, clientId: req.user!.id, status: BookingStatus.COMPLETED },
+    include: { review: true },
   });
   if (!booking) throw new HttpError(400, "Only completed bookings can be reviewed");
+  if (booking.review) throw new HttpError(409, "You have already reviewed this booking");
   res.status(201).json(await prisma.review.create({
     data: { ...data, clientId: req.user!.id, salonId: booking.salonId },
+    include: { client: { select: { id: true, name: true } } },
   }));
 }));
 

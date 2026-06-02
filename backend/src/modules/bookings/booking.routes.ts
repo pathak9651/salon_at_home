@@ -16,6 +16,7 @@ const bookingInclude = {
   service: true,
   services: { include: { service: true } },
   payment: true,
+  review: true,
   client: { select: { id: true, name: true, phone: true, email: true } },
 };
 

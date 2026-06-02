@@ -1,6 +1,6 @@
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { apiRequest } from "../../api/client";
 import { ThemeColors, useTheme } from "../../utils/theme";
 import { ScreenHeader } from "../common/ScreenHeader";
@@ -16,6 +16,13 @@ type Booking = {
   service?: { name: string };
   services?: Array<{ service: { name: string }; price: number }>;
   payment?: Payment | null;
+  review?: Review | null;
+};
+
+type Review = {
+  id: string;
+  rating: number;
+  comment?: string | null;
 };
 
 type Payment = {
@@ -57,6 +64,9 @@ export function MyBookingsScreen({ token }: { token: string }) {
   const [rescheduleTimeValue, setRescheduleTimeValue] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [reviewingBookingId, setReviewingBookingId] = useState<string | null>(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState("");
 
   useEffect(() => {
     void loadBookings();
@@ -205,6 +215,33 @@ export function MyBookingsScreen({ token }: { token: string }) {
     }
   }
 
+  function startReview(booking: Booking) {
+    setReviewingBookingId(booking.id);
+    setReviewRating(5);
+    setReviewComment("");
+  }
+
+  async function submitReview(id: string) {
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      await apiRequest<Review>("/reviews", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ bookingId: id, rating: reviewRating, comment: reviewComment.trim() || undefined }),
+      });
+      setReviewingBookingId(null);
+      setReviewComment("");
+      setNotice("Review submitted");
+      await loadBookings();
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : "Could not submit review");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const upcoming = bookings.filter((booking) => ["PENDING", "ACCEPTED"].includes(booking.status) && new Date(booking.scheduledAt) >= new Date());
   const completed = bookings.filter((booking) => !upcoming.some((item) => item.id === booking.id));
 
@@ -223,7 +260,7 @@ export function MyBookingsScreen({ token }: { token: string }) {
       {showTimePicker && <DateTimePicker value={rescheduleTimeValue ?? new Date()} mode="time" display="default" onChange={updateTime} />}
 
       <Text style={styles.section}>COMPLETED</Text>
-      {completed.length ? completed.map((booking) => <BookingCard booking={booking} key={booking.id} styles={styles} saving={saving} onPay={payForBooking} onInvoice={showInvoice} />) : <Text style={styles.empty}>No completed bookings yet.</Text>}
+      {completed.length ? completed.map((booking) => <BookingCard booking={booking} key={booking.id} styles={styles} saving={saving} onPay={payForBooking} onInvoice={showInvoice} onStartReview={startReview} onSubmitReview={submitReview} reviewingBookingId={reviewingBookingId} reviewRating={reviewRating} reviewComment={reviewComment} setReviewRating={setReviewRating} setReviewComment={setReviewComment} />) : <Text style={styles.empty}>No completed bookings yet.</Text>}
 
       <Text style={styles.section}>PAYMENT HISTORY</Text>
       {payments.length ? payments.map((payment) => (
@@ -260,6 +297,13 @@ function BookingCard({
   onSubmitReschedule,
   onPay,
   onInvoice,
+  onStartReview,
+  onSubmitReview,
+  reviewingBookingId,
+  reviewRating,
+  reviewComment,
+  setReviewRating,
+  setReviewComment,
 }: {
   booking: Booking;
   styles: ReturnType<typeof createStyles>;
@@ -274,11 +318,20 @@ function BookingCard({
   onSubmitReschedule?: (id: string) => Promise<void>;
   onPay?: (booking: Booking) => Promise<void>;
   onInvoice?: (paymentId: string) => Promise<void>;
+  onStartReview?: (booking: Booking) => void;
+  onSubmitReview?: (id: string) => Promise<void>;
+  reviewingBookingId?: string | null;
+  reviewRating?: number;
+  reviewComment?: string;
+  setReviewRating?: (rating: number) => void;
+  setReviewComment?: (comment: string) => void;
 }) {
   const canManage = ["PENDING", "ACCEPTED"].includes(booking.status) && !!onCancel && !!onStartReschedule;
   const canPay = booking.status === "COMPLETED" && booking.payment?.status !== "PAID" && !!onPay;
   const canViewInvoice = booking.payment?.status === "PAID" && !!booking.payment.id && !!onInvoice;
+  const canReview = booking.status === "COMPLETED" && !booking.review && !!onStartReview;
   const isRescheduling = reschedulingBookingId === booking.id;
+  const isReviewing = reviewingBookingId === booking.id;
 
   return (
     <View style={styles.bookingCard}>
@@ -306,6 +359,20 @@ function BookingCard({
       </View>}
       {canPay && <TouchableOpacity disabled={saving} onPress={() => void onPay?.(booking)} style={styles.payButton}><Text style={styles.primaryText}>PAY NOW</Text></TouchableOpacity>}
       {canViewInvoice && <TouchableOpacity onPress={() => void onInvoice?.(booking.payment!.id)} style={styles.invoiceButton}><Text style={styles.link}>VIEW DIGITAL INVOICE</Text></TouchableOpacity>}
+      {!!booking.review && <Text style={styles.reviewDone}>Your rating: {"★".repeat(booking.review.rating)}{"☆".repeat(5 - booking.review.rating)}</Text>}
+      {canReview && !isReviewing && <TouchableOpacity disabled={saving} onPress={() => onStartReview?.(booking)} style={styles.invoiceButton}><Text style={styles.link}>RATE SALON</Text></TouchableOpacity>}
+      {isReviewing && <View style={styles.reviewPanel}>
+        <Text style={styles.label}>RATE SALON</Text>
+        <View style={styles.starRow}>
+          {[1, 2, 3, 4, 5].map((rating) => (
+            <TouchableOpacity key={rating} onPress={() => setReviewRating?.(rating)} style={styles.starButton}>
+              <Text style={rating <= (reviewRating ?? 5) ? styles.starActive : styles.starInactive}>★</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <TextInput value={reviewComment} onChangeText={setReviewComment} placeholder="Write your review" placeholderTextColor={styles.placeholder.color} style={styles.reviewInput} multiline />
+        <TouchableOpacity disabled={saving} onPress={() => void onSubmitReview?.(booking.id)} style={styles.primary}><Text style={styles.primaryText}>SUBMIT REVIEW</Text></TouchableOpacity>
+      </View>}
     </View>
   );
 }
@@ -345,5 +412,13 @@ function createStyles(colors: ThemeColors) {
     payButton: { alignItems: "center", justifyContent: "center", minHeight: 44, marginTop: 12, padding: 12, backgroundColor: colors.cyan },
     invoiceButton: { alignItems: "center", justifyContent: "center", minHeight: 42, marginTop: 12, padding: 12, borderWidth: 1, borderColor: colors.cyan },
     paymentCard: { flexDirection: "row", justifyContent: "space-between", gap: 10, padding: 14, marginBottom: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    reviewDone: { color: colors.amber, fontSize: 11, fontWeight: "900", marginTop: 12 },
+    reviewPanel: { marginTop: 12, padding: 12, borderWidth: 1, borderColor: colors.heroBorder, backgroundColor: colors.panelRaised },
+    starRow: { flexDirection: "row", gap: 6, marginBottom: 10 },
+    starButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    starActive: { color: colors.amber, fontSize: 20, fontWeight: "900" },
+    starInactive: { color: colors.muted, fontSize: 20, fontWeight: "900" },
+    reviewInput: { color: colors.text, minHeight: 82, padding: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, fontSize: 12, textAlignVertical: "top", marginBottom: 10 },
+    placeholder: { color: colors.placeholder },
   });
 }
