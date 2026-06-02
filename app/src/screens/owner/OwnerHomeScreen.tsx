@@ -12,12 +12,22 @@ type Booking = {
   address: string;
   totalAmount: number;
   status: string;
-  client?: { name?: string | null; phone: string; email?: string | null } | null;
+  client?: { id: string; name?: string | null; phone: string; email?: string | null } | null;
   salon?: { id: string; name: string };
   employee?: Employee | null;
   service?: { name: string };
   services?: Array<{ service: { name: string }; price: number }>;
   payment?: { status: string; method?: string | null; platformFee: number; merchantAmount: number; cashRemark?: string | null } | null;
+};
+
+type Payment = {
+  id: string;
+  amount: number;
+  status: string;
+  method?: string | null;
+  platformFee: number;
+  merchantAmount: number;
+  paidAt?: string | null;
 };
 
 type Employee = {
@@ -33,6 +43,7 @@ export function OwnerHomeScreen({ token }: { token: string }) {
   const styles = createStyles(colors);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
@@ -55,12 +66,14 @@ export function OwnerHomeScreen({ token }: { token: string }) {
     setLoading(true);
     setError("");
     try {
-      const [nextBookings, nextEmployees] = await Promise.all([
+      const [nextBookings, nextEmployees, nextPayments] = await Promise.all([
         apiRequest<Booking[]>("/bookings", { headers: { Authorization: `Bearer ${token}` } }),
         apiRequest<Employee[]>("/employees", { headers: { Authorization: `Bearer ${token}` } }),
+        apiRequest<Payment[]>("/payments", { headers: { Authorization: `Bearer ${token}` } }),
       ]);
       setBookings(nextBookings);
       setEmployees(nextEmployees);
+      setPayments(nextPayments);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load merchant bookings");
     } finally {
@@ -180,15 +193,42 @@ export function OwnerHomeScreen({ token }: { token: string }) {
   const scheduledBookings = bookings.filter((booking) => booking.status === "ACCEPTED");
   const historyBookings = bookings.filter((booking) => !["PENDING", "ACCEPTED"].includes(booking.status));
   const paidEarnings = bookings.filter((booking) => booking.payment?.status === "PAID").reduce((sum, booking) => sum + (booking.payment?.merchantAmount ?? 0), 0);
+  const todayKey = new Date().toDateString();
+  const paidPayments = payments.filter((payment) => payment.status === "PAID");
+  const dailyEarnings = paidPayments
+    .filter((payment) => payment.paidAt && new Date(payment.paidAt).toDateString() === todayKey)
+    .reduce((sum, payment) => sum + payment.merchantAmount, 0);
+  const uniqueCustomerIds = new Set(bookings.map((booking) => booking.client?.id ?? booking.client?.phone).filter(Boolean));
+  const completedCount = bookings.filter((booking) => booking.status === "COMPLETED").length;
+  const repeatCustomers = [...uniqueCustomerIds].filter((customerId) => bookings.filter((booking) => (booking.client?.id ?? booking.client?.phone) === customerId).length > 1).length;
+  const conversionRate = bookings.length ? Math.round((completedCount / bookings.length) * 100) : 0;
 
   if (loading) return <View style={styles.center}><ActivityIndicator color={colors.cyan} /></View>;
 
   return (
     <KeyboardAwareScreen contentContainerStyle={styles.page}>
-      <ScreenHeader eyebrow="PARTNER CONSOLE // MERCHANT" title="Booking management" subtitle="Accept requests, schedule visits, assign stylists, and close service by online payment or collected cash." />
+      <ScreenHeader eyebrow="PARTNER CONSOLE // MERCHANT" title="Salon dashboard" subtitle="Track bookings, daily earnings, booking analytics, customers, and request actions." />
+      <View style={styles.grid}>
+        <Metric styles={styles} label="TOTAL BOOKINGS" value={String(bookings.length)} />
+        <Metric styles={styles} label="DAILY EARNINGS" value={`INR ${dailyEarnings}`} />
+      </View>
       <View style={styles.grid}>
         <Metric styles={styles} label="MERCHANT EARNINGS" value={`INR ${paidEarnings}`} />
         <Metric styles={styles} label="ACTIVE REQUESTS" value={String(activeBookings.length)} />
+      </View>
+      <Text style={styles.section}>BOOKING ANALYTICS</Text>
+      <View style={styles.analyticsGrid}>
+        <AnalyticsCard styles={styles} label="Pending" value={requestBookings.length} />
+        <AnalyticsCard styles={styles} label="Scheduled" value={scheduledBookings.length} />
+        <AnalyticsCard styles={styles} label="Completed" value={completedCount} />
+        <AnalyticsCard styles={styles} label="Rejected" value={bookings.filter((booking) => booking.status === "REJECTED").length} />
+        <AnalyticsCard styles={styles} label="Cancelled" value={bookings.filter((booking) => booking.status === "CANCELLED").length} />
+        <AnalyticsCard styles={styles} label="Conversion" value={`${conversionRate}%`} />
+      </View>
+      <Text style={styles.section}>CUSTOMER STATISTICS</Text>
+      <View style={styles.grid}>
+        <Metric styles={styles} label="TOTAL CUSTOMERS" value={String(uniqueCustomerIds.size)} />
+        <Metric styles={styles} label="REPEAT CUSTOMERS" value={String(repeatCustomers)} />
       </View>
       {!!notice && <Text style={styles.notice}>{notice}</Text>}
       {!!error && <Text style={styles.error}>{error}</Text>}
@@ -350,6 +390,10 @@ function Metric({ label, value, styles }: { label: string; value: string; styles
   return <View style={styles.metric}><Text style={styles.label}>{label}</Text><Text style={styles.metricValue}>{value}</Text></View>;
 }
 
+function AnalyticsCard({ label, value, styles }: { label: string; value: string | number; styles: ReturnType<typeof createStyles> }) {
+  return <View style={styles.analyticsCard}><Text style={styles.analyticsValue}>{value}</Text><Text style={styles.analyticsLabel}>{label}</Text></View>;
+}
+
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
     center: { flex: 1, alignItems: "center", justifyContent: "center" },
@@ -361,6 +405,10 @@ function createStyles(colors: ThemeColors) {
     notice: { color: colors.green, fontSize: 11, marginTop: 14 },
     error: { color: colors.danger, fontSize: 11, marginTop: 14 },
     section: { color: colors.text, fontSize: 12, fontWeight: "800", letterSpacing: 1.4, marginTop: 24, marginBottom: 10 },
+    analyticsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    analyticsCard: { flexGrow: 1, flexBasis: "30%", minHeight: 62, justifyContent: "center", padding: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    analyticsValue: { color: colors.cyan, fontSize: 16, fontWeight: "900" },
+    analyticsLabel: { color: colors.muted, fontSize: 9, fontWeight: "800", marginTop: 6 },
     card: { padding: 14, marginBottom: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
     top: { flexDirection: "row", justifyContent: "space-between", gap: 10 },
     copy: { flex: 1 },
