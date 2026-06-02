@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { ApiError, apiRequest } from "../../api/client";
 import { AuthSession } from "../../App";
 import { ThemeColors, useTheme } from "../../utils/theme";
+import { KeyboardAwareScreen } from "../common/KeyboardAwareScreen";
 
 type Mode = "login" | "signup" | "verify" | "forgot" | "reset";
 type AccountType = "CLIENT" | "MERCHANT";
@@ -89,13 +90,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (session: Aut
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0} style={styles.flex}>
-      <ScrollView
-        contentContainerStyle={styles.page}
-        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
+    <KeyboardAwareScreen contentContainerStyle={styles.page}>
         <Text style={styles.eyebrow}>SALON AT HOME // SECURE ACCESS</Text>
         <Text style={styles.title}>{titles[mode]}</Text>
         <Text style={styles.subtitle}>{subtitles[mode]}</Text>
@@ -130,8 +125,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (session: Aut
         {mode === "verify" && <TouchableOpacity onPress={() => void resendVerification()}><Text style={styles.link}>RESEND VERIFICATION CODE</Text></TouchableOpacity>}
         {(mode === "verify" || mode === "forgot" || mode === "reset") && <TouchableOpacity onPress={() => changeMode("login")}><Text style={styles.link}>BACK TO LOGIN</Text></TouchableOpacity>}
         <Text style={styles.note}>Verification and password reset codes expire after 10 minutes.</Text>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAwareScreen>
   );
 }
 

@@ -167,12 +167,40 @@ router.post("/:id/services", requireAuth, requireRole(UserRole.OWNER), asyncHand
   const salon = await prisma.salon.findFirst({ where: { id: String(req.params.id), ownerId: req.user!.id } });
   if (!salon) throw new HttpError(404, "Salon not found");
   const data = z.object({
-    name: z.string().min(2),
-    description: z.string().optional(),
-    price: z.number().int().positive(),
-    durationMin: z.number().int().min(15),
+    name: z.string().trim().min(2),
+    description: z.string().trim().optional().or(z.literal("")),
+    price: z.coerce.number().int().positive(),
+    durationMin: z.coerce.number().int().min(15),
   }).parse(req.body);
-  res.status(201).json(await prisma.service.create({ data: { ...data, salonId: salon.id } }));
+  res.status(201).json(await prisma.service.create({ data: { ...data, description: data.description || null, salonId: salon.id } }));
+}));
+
+router.patch("/:id/services/:serviceId", requireAuth, requireRole(UserRole.OWNER), asyncHandler(async (req, res) => {
+  const salon = await prisma.salon.findFirst({ where: { id: String(req.params.id), ownerId: req.user!.id } });
+  if (!salon) throw new HttpError(404, "Salon not found");
+  const service = await prisma.service.findFirst({ where: { id: String(req.params.serviceId), salonId: salon.id } });
+  if (!service) throw new HttpError(404, "Service not found");
+  const data = z.object({
+    name: z.string().trim().min(2).optional(),
+    description: z.string().trim().optional().or(z.literal("")),
+    price: z.coerce.number().int().positive().optional(),
+    durationMin: z.coerce.number().int().min(15).optional(),
+  }).parse(req.body);
+  res.json(await prisma.service.update({
+    where: { id: service.id },
+    data: { ...data, description: data.description === "" ? null : data.description },
+  }));
+}));
+
+router.delete("/:id/services/:serviceId", requireAuth, requireRole(UserRole.OWNER), asyncHandler(async (req, res) => {
+  const salon = await prisma.salon.findFirst({ where: { id: String(req.params.id), ownerId: req.user!.id } });
+  if (!salon) throw new HttpError(404, "Salon not found");
+  const service = await prisma.service.findFirst({ where: { id: String(req.params.serviceId), salonId: salon.id } });
+  if (!service) throw new HttpError(404, "Service not found");
+  const bookingCount = await prisma.booking.count({ where: { OR: [{ serviceId: service.id }, { services: { some: { serviceId: service.id } } }] } });
+  if (bookingCount > 0) throw new HttpError(409, "This service has bookings and cannot be deleted");
+  await prisma.service.delete({ where: { id: service.id } });
+  res.status(204).send();
 }));
 
 export default router;

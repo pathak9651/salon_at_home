@@ -1,8 +1,9 @@
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { apiRequest } from "../../api/client";
 import { ThemeColors, useTheme } from "../../utils/theme";
+import { KeyboardAwareScreen } from "../common/KeyboardAwareScreen";
 import { ScreenHeader } from "../common/ScreenHeader";
 
 type Booking = {
@@ -248,7 +249,7 @@ export function MyBookingsScreen({ token }: { token: string }) {
   if (loading) return <View style={styles.center}><ActivityIndicator color={colors.cyan} /></View>;
 
   return (
-    <ScrollView contentContainerStyle={styles.page}>
+    <KeyboardAwareScreen contentContainerStyle={styles.page}>
       <ScreenHeader eyebrow="BOOKINGS // CLIENT" title="My bookings" subtitle="Track upcoming bookings, reschedule visits, and review completed service history." />
       {!!notice && <Text style={styles.notice}>{notice}</Text>}
       {!!error && <Text style={styles.error}>{error}</Text>}
@@ -279,7 +280,7 @@ export function MyBookingsScreen({ token }: { token: string }) {
           </View>
         </View>
       )) : <Text style={styles.empty}>No payments yet. Payment opens after service completion.</Text>}
-    </ScrollView>
+    </KeyboardAwareScreen>
   );
 }
 

@@ -2,10 +2,11 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SessionUser } from "../../App";
 import { API_URL, apiAssetUrl, apiRequest } from "../../api/client";
 import { ThemeColors, useTheme } from "../../utils/theme";
+import { KeyboardAwareScreen } from "../common/KeyboardAwareScreen";
 
 type Address = {
   id: string;
@@ -236,8 +237,7 @@ export function ProfileScreen({
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flex}>
-      <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    <KeyboardAwareScreen contentContainerStyle={styles.page}>
         <Text style={styles.eyebrow}>ACCOUNT // PROFILE</Text>
         <View style={styles.hero}>
           <TouchableOpacity onPress={() => void uploadPhoto()} style={styles.avatar}>
@@ -297,8 +297,7 @@ export function ProfileScreen({
         <TouchableOpacity onPress={() => void onLogout()} style={styles.logout}>
           <Text style={styles.logoutText}>LOGOUT FROM DEVICE</Text>
         </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAwareScreen>
   );
 }
 

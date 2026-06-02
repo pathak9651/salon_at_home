@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { apiRequest } from "../../api/client";
 import { ThemeColors, useTheme } from "../../utils/theme";
+import { KeyboardAwareScreen } from "../common/KeyboardAwareScreen";
 import { ScreenHeader } from "../common/ScreenHeader";
 
 type Coordinates = { latitude: number; longitude: number };
@@ -264,7 +265,7 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
   if (selectedSalon) {
     const gallery = [selectedSalon.coverImageUrl, selectedSalon.imageUrl, ...selectedSalon.images.map((image) => image.url)].filter(Boolean) as string[];
     return (
-      <ScrollView contentContainerStyle={styles.page}>
+      <KeyboardAwareScreen contentContainerStyle={styles.page}>
         <TouchableOpacity onPress={() => setSelectedSalon(null)} style={styles.secondary}><Text style={styles.secondaryText}>BACK TO SALONS</Text></TouchableOpacity>
         <Text style={styles.detailTitle}>{selectedSalon.name}</Text>
         <Text style={styles.rating}>{ratingText(selectedSalon)}{selectedSalon.distanceKm !== null && selectedSalon.distanceKm !== undefined ? `  |  ${selectedSalon.distanceKm.toFixed(1)} km` : ""}</Text>
@@ -340,12 +341,12 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
           </TouchableOpacity>
         </View>
         <TouchableOpacity onPress={() => void openMaps(selectedSalon)} style={styles.primary}><Text style={styles.primaryText}>OPEN IN GOOGLE MAPS</Text></TouchableOpacity>
-      </ScrollView>
+      </KeyboardAwareScreen>
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+    <KeyboardAwareScreen contentContainerStyle={styles.page}>
       <ScreenHeader eyebrow="SALON AT HOME // CLIENT" title="Salon discovery" subtitle="Search nearby salons and compare distance, ratings, services, and charges." />
       <View style={styles.location}>
         <View>
@@ -392,7 +393,7 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
           <TouchableOpacity onPress={() => void openMaps(salon)} style={styles.mapBadge}><Text style={styles.mapText}>MAP</Text></TouchableOpacity>
         </TouchableOpacity>
       ))}
-    </ScrollView>
+    </KeyboardAwareScreen>
   );
 }
 
