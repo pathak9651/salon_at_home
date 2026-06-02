@@ -5,6 +5,7 @@ import { ActivityIndicator, Platform, SafeAreaView, StatusBar, StyleSheet, Text,
 import { apiRequest } from "./api/client";
 import { AdminHomeScreen } from "./screens/admin/AdminHomeScreen";
 import { AuthScreen } from "./screens/auth/AuthScreen";
+import { MyBookingsScreen } from "./screens/bookings/MyBookingsScreen";
 import { ClientHomeScreen } from "./screens/client/ClientHomeScreen";
 import { OwnerHomeScreen } from "./screens/owner/OwnerHomeScreen";
 import { ProfileScreen } from "./screens/profile/ProfileScreen";
@@ -15,7 +16,7 @@ export type SessionUser = { id: string; name?: string | null; email?: string | n
 export type AuthSession = { token: string; user: SessionUser };
 
 const TOKEN_KEY = "salon_at_home_token";
-type Tab = "home" | "profile";
+type Tab = "home" | "bookings" | "profile";
 
 export default function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
@@ -102,12 +103,14 @@ function AppContent() {
       </View>
       <View style={styles.content}>
         {tab === "profile" && <ProfileScreen token={session.token} user={session.user} onLogout={handleLogout} onUserUpdated={handleUserUpdated} />}
-        {tab === "home" && session.user.role === "CLIENT" && <ClientHomeScreen token={session.token} />}
+        {tab === "bookings" && <MyBookingsScreen token={session.token} />}
+        {tab === "home" && session.user.role === "CLIENT" && <ClientHomeScreen token={session.token} onBookingCompleted={() => setTab("bookings")} />}
         {tab === "home" && session.user.role === "OWNER" && <OwnerHomeScreen />}
         {tab === "home" && session.user.role === "ADMIN" && <AdminHomeScreen />}
       </View>
       <View style={styles.tabs}>
         <TabButton label="HOME" active={tab === "home"} onPress={() => setTab("home")} />
+        <TabButton label="MY BOOKINGS" active={tab === "bookings"} onPress={() => setTab("bookings")} />
         <TabButton label="PROFILE" active={tab === "profile"} onPress={() => setTab("profile")} />
       </View>
     </SafeAreaView>

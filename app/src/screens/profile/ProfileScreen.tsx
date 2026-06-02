@@ -22,17 +22,19 @@ type Profile = SessionUser & {
   addresses: Address[];
 };
 
-type Booking = {
-  id: string;
-  scheduledAt: string;
-  address: string;
-  totalAmount: number;
-  status: string;
-  salon?: { name: string };
-  service?: { name: string };
-};
-
 const emptyAddress = { label: "", line1: "", line2: "", city: "", state: "", pincode: "", isDefault: false };
+
+function normalizeAddress(address: typeof emptyAddress) {
+  return {
+    label: address.label.trim(),
+    line1: address.line1.trim(),
+    line2: address.line2.trim(),
+    city: address.city.trim(),
+    state: address.state.trim(),
+    pincode: address.pincode.trim(),
+    isDefault: address.isDefault,
+  };
+}
 
 export function ProfileScreen({
   token,
@@ -48,7 +50,6 @@ export function ProfileScreen({
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [bookings, setBookings] = useState<Booking[]>([]);
   const [name, setName] = useState(user.name ?? "");
   const [phone, setPhone] = useState(user.phone);
   const [address, setAddress] = useState(emptyAddress);
@@ -67,12 +68,8 @@ export function ProfileScreen({
     setError("");
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const [nextProfile, nextBookings] = await Promise.all([
-        apiRequest<Profile>("/profile", { headers }),
-        apiRequest<Booking[]>("/bookings", { headers }),
-      ]);
+      const nextProfile = await apiRequest<Profile>("/profile", { headers });
       setProfile(nextProfile);
-      setBookings(nextBookings);
       setName(nextProfile.name ?? "");
       setPhone(nextProfile.phone);
       onUserUpdated(nextProfile);
@@ -153,14 +150,23 @@ export function ProfileScreen({
     setError("");
     setNotice("");
     try {
-      await apiRequest<Address>("/profile/addresses", {
+      const nextAddress = normalizeAddress(address);
+      if (!nextAddress.label || !nextAddress.line1 || !nextAddress.city || !nextAddress.state || !nextAddress.pincode) {
+        throw new Error("Fill label, address line 1, city, state, and pincode before saving.");
+      }
+      const savedAddress = await apiRequest<Address>("/profile/addresses", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
-        body: JSON.stringify(address),
+        body: JSON.stringify(nextAddress),
       });
       setAddress(emptyAddress);
+      setProfile((current) => current ? {
+        ...current,
+        addresses: savedAddress.isDefault
+          ? [savedAddress, ...current.addresses.map((item) => ({ ...item, isDefault: false }))]
+          : [savedAddress, ...current.addresses],
+      } : current);
       setNotice("Address saved");
-      await loadProfile();
     } catch (addressError) {
       setError(addressError instanceof Error ? addressError.message : "Could not save address");
     } finally {
@@ -278,10 +284,8 @@ export function ProfileScreen({
           <Field label="LABEL" value={address.label} onChangeText={(label) => setAddress((current) => ({ ...current, label }))} placeholder="Home, Work, Studio" />
           <Field label="ADDRESS LINE 1" value={address.line1} onChangeText={(line1) => setAddress((current) => ({ ...current, line1 }))} placeholder="House number and street" />
           <Field label="ADDRESS LINE 2" value={address.line2} onChangeText={(line2) => setAddress((current) => ({ ...current, line2 }))} placeholder="Landmark or area" />
-          <View style={styles.twoColumns}>
-            <Field label="CITY" value={address.city} onChangeText={(city) => setAddress((current) => ({ ...current, city }))} placeholder="City" />
-            <Field label="PINCODE" value={address.pincode} onChangeText={(pincode) => setAddress((current) => ({ ...current, pincode }))} placeholder="560001" keyboardType="number-pad" />
-          </View>
+          <Field label="CITY" value={address.city} onChangeText={(city) => setAddress((current) => ({ ...current, city }))} placeholder="City" />
+          <Field label="PINCODE" value={address.pincode} onChangeText={(pincode) => setAddress((current) => ({ ...current, pincode }))} placeholder="560001" keyboardType="number-pad" />
           <Field label="STATE" value={address.state} onChangeText={(state) => setAddress((current) => ({ ...current, state }))} placeholder="State" />
           <TouchableOpacity onPress={() => setAddress((current) => ({ ...current, isDefault: !current.isDefault }))} style={styles.checkbox}>
             <View style={[styles.checkboxBox, address.isDefault && styles.checkboxActive]} />
@@ -289,21 +293,6 @@ export function ProfileScreen({
           </TouchableOpacity>
           <TouchableOpacity disabled={saving} onPress={() => void addAddress()} style={styles.primary}><Text style={styles.primaryText}>SAVE ADDRESS</Text></TouchableOpacity>
         </View>
-
-        <Text style={styles.section}>BOOKING HISTORY</Text>
-        {bookings.length ? bookings.map((booking) => (
-          <View style={styles.bookingCard} key={booking.id}>
-            <View>
-              <Text style={styles.bookingTitle}>{booking.service?.name ?? "Salon service"}</Text>
-              <Text style={styles.bookingMeta}>{booking.salon?.name ?? "Salon"} | {new Date(booking.scheduledAt).toLocaleString()}</Text>
-              <Text style={styles.bookingMeta}>{booking.address}</Text>
-            </View>
-            <View style={styles.bookingSide}>
-              <Text style={styles.bookingStatus}>{booking.status}</Text>
-              <Text style={styles.bookingAmount}>INR {booking.totalAmount}</Text>
-            </View>
-          </View>
-        )) : <Text style={styles.empty}>No bookings yet.</Text>}
 
         <Text style={styles.section}>SECURITY</Text>
         <View style={styles.security}>
@@ -374,12 +363,6 @@ function createStyles(colors: ThemeColors) {
   checkboxBox: { width: 18, height: 18, borderWidth: 1, borderColor: colors.border },
   checkboxActive: { backgroundColor: colors.cyan, borderColor: colors.cyan },
   checkboxText: { color: colors.text, fontSize: 12, fontWeight: "700" },
-  bookingCard: { flexDirection: "row", justifyContent: "space-between", gap: 10, padding: 14, marginBottom: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
-  bookingTitle: { color: colors.text, fontSize: 14, fontWeight: "800" },
-  bookingMeta: { color: colors.muted, fontSize: 10, marginTop: 6, maxWidth: 210 },
-  bookingSide: { alignItems: "flex-end" },
-  bookingStatus: { color: colors.amber, fontSize: 9, fontWeight: "900" },
-  bookingAmount: { color: colors.cyan, fontSize: 11, fontWeight: "800", marginTop: 8 },
   security: { padding: 14, borderWidth: 1, borderColor: colors.warningBorder, backgroundColor: colors.warningPanel },
   securityTitle: { color: colors.amber, fontSize: 10, fontWeight: "900", letterSpacing: 1.1 },
   securityText: { color: colors.warningText, fontSize: 11, lineHeight: 18, marginTop: 8 },

@@ -40,7 +40,7 @@ const ratingFilters = [0, 3, 4, 4.5];
 const distanceFilters = [5, 10, 25, 50];
 const priceFilters = [0, 500, 1000, 2000];
 
-export function ClientHomeScreen({ token }: { token: string }) {
+export function ClientHomeScreen({ token, onBookingCompleted }: { token: string; onBookingCompleted: () => void }) {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const [location, setLocation] = useState<Coordinates | null>(null);
@@ -55,6 +55,7 @@ export function ClientHomeScreen({ token }: { token: string }) {
   const [bookingAddress, setBookingAddress] = useState("");
   const [bookingInstructions, setBookingInstructions] = useState("");
   const [bookingConfirmation, setBookingConfirmation] = useState<BookingConfirmation | null>(null);
+  const [bookingSuccess, setBookingSuccess] = useState("");
   const [search, setSearch] = useState("");
   const [service, setService] = useState("");
   const [minRating, setMinRating] = useState(0);
@@ -130,6 +131,7 @@ export function ClientHomeScreen({ token }: { token: string }) {
     setSelectedSalon(salon);
     setSelectedServiceIds([]);
     setBookingConfirmation(null);
+    setBookingSuccess("");
     setLoadingDetails(true);
     try {
       setSelectedSalon(await apiRequest<Salon>(`/salons/${salon.id}`));
@@ -154,6 +156,7 @@ export function ClientHomeScreen({ token }: { token: string }) {
     setBookingLoading(true);
     setError("");
     setBookingConfirmation(null);
+    setBookingSuccess("");
     try {
       if (!selectedServiceIds.length) throw new Error("Choose at least one service");
       if (!bookingDate || !bookingTime) throw new Error("Choose preferred date and time");
@@ -172,12 +175,32 @@ export function ClientHomeScreen({ token }: { token: string }) {
           instructions: bookingInstructions || undefined,
         }),
       });
+      resetBookingForm();
       setBookingConfirmation(booking);
+      setBookingSuccess("Your booking is successful");
+      setTimeout(() => {
+        setBookingSuccess("");
+        setSelectedSalon(null);
+        onBookingCompleted();
+      }, 1200);
     } catch (bookingError) {
       setError(bookingError instanceof Error ? bookingError.message : "Could not confirm booking");
     } finally {
       setBookingLoading(false);
     }
+  }
+
+  function resetBookingForm() {
+    setSelectedServiceIds([]);
+    setBookingDate("");
+    setBookingTime("");
+    setBookingDateValue(null);
+    setBookingTimeValue(null);
+    setBookingAddress("");
+    setBookingInstructions("");
+    setBookingConfirmation(null);
+    setShowDatePicker(false);
+    setShowTimePicker(false);
   }
 
   function autofillBookingTime() {
@@ -293,8 +316,11 @@ export function ClientHomeScreen({ token }: { token: string }) {
             <Text style={styles.summaryLine}>{selectedServiceIds.length || 0} service(s)</Text>
             <Text style={styles.summaryAmount}>INR {selectedSalon.services.filter((item) => selectedServiceIds.includes(item.id)).reduce((sum, item) => sum + item.price, 0)}</Text>
           </View>
-          {!!bookingConfirmation && <Text style={styles.success}>Booking confirmed: {bookingConfirmation.status} | INR {bookingConfirmation.totalAmount}</Text>}
-          <TouchableOpacity disabled={bookingLoading} onPress={() => void confirmBooking(selectedSalon)} style={styles.confirmButton}>
+          {!!bookingSuccess && <View style={styles.successBadge}>
+            <Text style={styles.successTitle}>{bookingSuccess}</Text>
+            {!!bookingConfirmation && <Text style={styles.successText}>Status {bookingConfirmation.status} | INR {bookingConfirmation.totalAmount}</Text>}
+          </View>}
+          <TouchableOpacity disabled={bookingLoading || !!bookingSuccess} onPress={() => void confirmBooking(selectedSalon)} style={styles.confirmButton}>
             {bookingLoading ? <ActivityIndicator color={colors.buttonText} /> : <Text style={styles.primaryText}>CONFIRM BOOKING</Text>}
           </TouchableOpacity>
         </View>
@@ -431,6 +457,8 @@ function createStyles(colors: ThemeColors) {
     summaryLine: { color: colors.text, fontSize: 12, fontWeight: "800", marginTop: 8 },
     summaryAmount: { color: colors.cyan, fontSize: 20, fontWeight: "900", marginTop: 8 },
     confirmButton: { alignItems: "center", justifyContent: "center", minHeight: 50, paddingHorizontal: 14, backgroundColor: colors.cyan, marginTop: 4 },
-    success: { color: colors.green, fontSize: 11, fontWeight: "800", marginBottom: 10 },
+    successBadge: { padding: 14, marginBottom: 10, borderWidth: 1, borderColor: colors.green, backgroundColor: colors.successPanel },
+    successTitle: { color: colors.green, fontSize: 13, fontWeight: "900" },
+    successText: { color: colors.text, fontSize: 11, fontWeight: "700", marginTop: 6 },
   });
 }

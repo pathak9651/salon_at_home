@@ -9,7 +9,12 @@ export function errorHandler(
   _next: NextFunction,
 ) {
   if (error instanceof ZodError) {
-    return res.status(400).json({ error: "Validation failed", details: error.flatten() });
+    const details = error.flatten();
+    const firstFieldError = Object.entries(details.fieldErrors).find(([, messages]) => messages?.length);
+    const message = firstFieldError
+      ? `${firstFieldError[0]}: ${firstFieldError[1]?.[0]}`
+      : details.formErrors[0] ?? "Validation failed";
+    return res.status(400).json({ error: message, details });
   }
   if (error instanceof HttpError) {
     return res.status(error.status).json({ error: error.message });
@@ -17,4 +22,3 @@ export function errorHandler(
   console.error(error);
   res.status(500).json({ error: "Internal server error" });
 }
-

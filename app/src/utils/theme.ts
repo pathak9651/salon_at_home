@@ -10,6 +10,7 @@ export type ThemeColors = {
   cyan: string;
   amber: string;
   green: string;
+  successPanel: string;
   text: string;
   muted: string;
   bar: string;
@@ -33,6 +34,7 @@ export const palettes: Record<ThemeMode, ThemeColors> = {
     cyan: "#25dbf4",
     amber: "#ffb84d",
     green: "#42e8a4",
+    successPanel: "#10251e",
     text: "#edf8fb",
     muted: "#7c9aa6",
     bar: "#07151f",
@@ -54,6 +56,7 @@ export const palettes: Record<ThemeMode, ThemeColors> = {
     cyan: "#007c91",
     amber: "#9c6200",
     green: "#12805c",
+    successPanel: "#e8f8f0",
     text: "#15242c",
     muted: "#657983",
     bar: "#ffffff",

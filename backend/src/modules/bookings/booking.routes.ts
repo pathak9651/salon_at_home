@@ -56,6 +56,26 @@ router.post("/", requireRole(UserRole.CLIENT), asyncHandler(async (req, res) => 
   }));
 }));
 
+router.patch("/:id/reschedule", requireRole(UserRole.CLIENT), asyncHandler(async (req, res) => {
+  const { scheduledAt } = z.object({
+    scheduledAt: z.coerce.date().refine((date) => date > new Date(), "Choose a future time"),
+  }).parse(req.body);
+
+  const booking = await prisma.booking.findFirst({
+    where: { id: String(req.params.id), clientId: req.user!.id },
+  });
+  if (!booking) throw new HttpError(404, "Booking not found");
+  if (!cancellableByClientStatuses.includes(booking.status)) {
+    throw new HttpError(400, `Cannot reschedule a ${booking.status.toLowerCase()} booking`);
+  }
+
+  res.json(await prisma.booking.update({
+    where: { id: booking.id },
+    data: { scheduledAt },
+    include: { salon: true, service: true, services: { include: { service: true } }, payment: true },
+  }));
+}));
+
 router.patch("/:id/status", asyncHandler(async (req, res) => {
   const { status } = z.object({ status: z.nativeEnum(BookingStatus) }).parse(req.body);
   const booking = await prisma.booking.findUnique({

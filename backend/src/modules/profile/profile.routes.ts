@@ -25,12 +25,12 @@ const profileSelect: Prisma.UserSelect = {
 };
 
 const addressSchema = z.object({
-  label: z.string().trim().min(2).max(40),
-  line1: z.string().trim().min(5).max(120),
-  line2: z.string().trim().max(120).optional().or(z.literal("")),
-  city: z.string().trim().min(2).max(60),
-  state: z.string().trim().min(2).max(60),
-  pincode: z.string().trim().min(4).max(12),
+  label: z.string().trim().min(1, "Label is required").max(40),
+  line1: z.string().trim().min(3, "Address line 1 is required").max(160),
+  line2: z.string().trim().max(160).optional().or(z.literal("")),
+  city: z.string().trim().min(1, "City is required").max(60),
+  state: z.string().trim().min(1, "State is required").max(60),
+  pincode: z.string().trim().min(3, "Pincode is required").max(12),
   isDefault: z.boolean().default(false),
 });
 
