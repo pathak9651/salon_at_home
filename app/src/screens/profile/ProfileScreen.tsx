@@ -475,9 +475,6 @@ export function ProfileScreen({
         <View style={styles.topBar}>
           <Text style={styles.screenTitle}>My Profile</Text>
           <View style={styles.topActions}>
-            <TouchableOpacity accessibilityLabel="Notifications" onPress={onOpenNotifications} style={styles.iconButton}>
-              <Ionicons name="notifications-outline" size={22} color={colors.text} />
-            </TouchableOpacity>
             <TouchableOpacity accessibilityLabel="Profile settings" onPress={() => setActiveSection("profile")} style={styles.iconButton}>
               <Ionicons name="settings-outline" size={22} color={colors.text} />
             </TouchableOpacity>
