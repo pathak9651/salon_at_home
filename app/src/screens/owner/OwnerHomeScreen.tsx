@@ -37,6 +37,10 @@ type Employee = {
   isActive: boolean;
   salonId: string;
 };
+type AnalyticsRange = "DAY" | "WEEK" | "MONTH" | "YEAR";
+type TrendPoint = { label: string; requests: number; completed: number; income: number };
+
+const analyticsRanges: AnalyticsRange[] = ["DAY", "WEEK", "MONTH", "YEAR"];
 
 export function OwnerHomeScreen({ token }: { token: string }) {
   const { colors } = useTheme();
@@ -57,6 +61,7 @@ export function OwnerHomeScreen({ token }: { token: string }) {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [cashBookingId, setCashBookingId] = useState<string | null>(null);
   const [cashRemark, setCashRemark] = useState("");
+  const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRange>("WEEK");
 
   useEffect(() => {
     void loadBookings();
@@ -203,6 +208,18 @@ export function OwnerHomeScreen({ token }: { token: string }) {
   const completedCount = bookings.filter((booking) => booking.status === "COMPLETED").length;
   const repeatCustomers = [...uniqueCustomerIds].filter((customerId) => bookings.filter((booking) => (booking.client?.id ?? booking.client?.phone) === customerId).length > 1).length;
   const conversionRate = bookings.length ? Math.round((completedCount / bookings.length) * 100) : 0;
+  const trendPoints = buildTrendPoints(bookings, paidPayments, analyticsRange);
+  const rangeTotals = trendPoints.reduce((totals, point) => ({
+    requests: totals.requests + point.requests,
+    completed: totals.completed + point.completed,
+    income: totals.income + point.income,
+  }), { requests: 0, completed: 0, income: 0 });
+  const statusDiagram = [
+    { label: "Pending", value: requestBookings.length, color: colors.amber },
+    { label: "Scheduled", value: scheduledBookings.length, color: colors.cyan },
+    { label: "Completed", value: completedCount, color: colors.green },
+    { label: "Closed", value: historyBookings.length, color: colors.muted },
+  ];
 
   if (loading) return <View style={styles.center}><ActivityIndicator color={colors.cyan} /></View>;
 
@@ -225,6 +242,31 @@ export function OwnerHomeScreen({ token }: { token: string }) {
         <AnalyticsCard styles={styles} label="Rejected" value={bookings.filter((booking) => booking.status === "REJECTED").length} />
         <AnalyticsCard styles={styles} label="Cancelled" value={bookings.filter((booking) => booking.status === "CANCELLED").length} />
         <AnalyticsCard styles={styles} label="Conversion" value={`${conversionRate}%`} />
+      </View>
+      <Text style={styles.section}>VISUAL INSIGHTS</Text>
+      <View style={styles.rangeTabs}>
+        {analyticsRanges.map((range) => (
+          <TouchableOpacity key={range} onPress={() => setAnalyticsRange(range)} style={[styles.rangeTab, analyticsRange === range && styles.rangeTabActive]}>
+            <Text style={[styles.rangeText, analyticsRange === range && styles.rangeTextActive]}>{range}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <View style={styles.visualPanel}>
+        <View style={styles.visualTop}>
+          <View>
+            <Text style={styles.visualTitle}>Performance overview</Text>
+            <Text style={styles.visualSub}>{analyticsRange.toLowerCase()} representation from live bookings and payments</Text>
+          </View>
+          <Text style={styles.visualAmount}>INR {rangeTotals.income}</Text>
+        </View>
+        <View style={styles.visualSummary}>
+          <MiniStat styles={styles} label="Requests" value={rangeTotals.requests} />
+          <MiniStat styles={styles} label="Completed" value={rangeTotals.completed} />
+          <MiniStat styles={styles} label="Income" value={`INR ${rangeTotals.income}`} />
+        </View>
+        <TrendBars title="Requests vs completed" mode="count" points={trendPoints} styles={styles} colors={colors} />
+        <TrendBars title="Income graph" mode="income" points={trendPoints} styles={styles} colors={colors} />
+        <StatusDiagram items={statusDiagram} styles={styles} />
       </View>
       <Text style={styles.section}>CUSTOMER STATISTICS</Text>
       <View style={styles.grid}>
@@ -423,6 +465,144 @@ function AnalyticsCard({ label, value, styles }: { label: string; value: string 
   return <View style={styles.analyticsCard}><Text style={styles.analyticsValue}>{value}</Text><Text style={styles.analyticsLabel}>{label}</Text></View>;
 }
 
+function MiniStat({ label, value, styles }: { label: string; value: string | number; styles: ReturnType<typeof createStyles> }) {
+  return <View style={styles.miniStat}><Text style={styles.miniValue}>{value}</Text><Text style={styles.miniLabel}>{label}</Text></View>;
+}
+
+function TrendBars({
+  title,
+  mode,
+  points,
+  styles,
+  colors,
+}: {
+  title: string;
+  mode: "count" | "income";
+  points: TrendPoint[];
+  styles: ReturnType<typeof createStyles>;
+  colors: ThemeColors;
+}) {
+  const maxValue = Math.max(1, ...points.map((point) => mode === "income" ? point.income : Math.max(point.requests, point.completed)));
+  return (
+    <View style={styles.chartBlock}>
+      <Text style={styles.chartTitle}>{title}</Text>
+      <View style={styles.barChart}>
+        {points.map((point, index) => {
+          const incomeHeight = Math.max(8, Math.round((point.income / maxValue) * 88));
+          const requestHeight = Math.max(8, Math.round((point.requests / maxValue) * 88));
+          const completedHeight = Math.max(8, Math.round((point.completed / maxValue) * 88));
+          return (
+            <View style={styles.barColumn} key={`${point.label}-${index}`}>
+              <View style={styles.barStack}>
+                {mode === "income" ? (
+                  <View style={[styles.incomeBar, { height: incomeHeight }]} />
+                ) : (
+                  <View style={styles.dualBars}>
+                    <View style={[styles.requestBar, { height: requestHeight }]} />
+                    <View style={[styles.completedBar, { height: completedHeight }]} />
+                  </View>
+                )}
+              </View>
+              <Text style={styles.barLabel}>{point.label}</Text>
+            </View>
+          );
+        })}
+      </View>
+      <View style={styles.legendRow}>
+        {mode === "income" ? <Legend styles={styles} color={colors.green} label="Income" /> : <>
+          <Legend styles={styles} color={colors.amber} label="Requests" />
+          <Legend styles={styles} color={colors.green} label="Completed" />
+        </>}
+      </View>
+    </View>
+  );
+}
+
+function Legend({ color, label, styles }: { color: string; label: string; styles: ReturnType<typeof createStyles> }) {
+  return <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: color }]} /><Text style={styles.legendText}>{label}</Text></View>;
+}
+
+function StatusDiagram({ items, styles }: { items: Array<{ label: string; value: number; color: string }>; styles: ReturnType<typeof createStyles> }) {
+  const total = Math.max(1, items.reduce((sum, item) => sum + item.value, 0));
+  return (
+    <View style={styles.statusPanel}>
+      <Text style={styles.chartTitle}>Request status diagram</Text>
+      <View style={styles.statusTrack}>
+        {items.map((item) => <View key={item.label} style={[styles.statusSegment, { flex: item.value || 0.25, backgroundColor: item.color }]} />)}
+      </View>
+      <View style={styles.statusList}>
+        {items.map((item) => (
+          <View style={styles.statusItem} key={item.label}>
+            <View style={[styles.legendDot, { backgroundColor: item.color }]} />
+            <Text style={styles.statusLabelText}>{item.label}</Text>
+            <Text style={styles.statusPercent}>{Math.round((item.value / total) * 100)}%</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function buildTrendPoints(bookings: Booking[], payments: Payment[], range: AnalyticsRange) {
+  const descriptors = buildRangeDescriptors(range);
+  return descriptors.map((descriptor) => {
+    const rangeBookings = bookings.filter((booking) => isInRange(new Date(booking.scheduledAt), descriptor.start, descriptor.end));
+    const rangePayments = payments.filter((payment) => payment.status === "PAID" && payment.paidAt && isInRange(new Date(payment.paidAt), descriptor.start, descriptor.end));
+    return {
+      label: descriptor.label,
+      requests: rangeBookings.length,
+      completed: rangeBookings.filter((booking) => booking.status === "COMPLETED").length,
+      income: rangePayments.reduce((sum, payment) => sum + payment.merchantAmount, 0),
+    };
+  });
+}
+
+function buildRangeDescriptors(range: AnalyticsRange) {
+  const now = new Date();
+  if (range === "DAY") {
+    return Array.from({ length: 6 }, (_, index) => {
+      const start = new Date(now);
+      start.setHours(Math.max(0, now.getHours() - (5 - index) * 4), 0, 0, 0);
+      const end = new Date(start);
+      end.setHours(start.getHours() + 4, 0, 0, 0);
+      return { label: `${String(start.getHours()).padStart(2, "0")}:00`, start, end };
+    });
+  }
+  if (range === "WEEK") {
+    return Array.from({ length: 7 }, (_, index) => {
+      const start = startOfDay(addDays(now, index - 6));
+      return { label: start.toLocaleDateString("en-IN", { weekday: "short" }), start, end: addDays(start, 1) };
+    });
+  }
+  if (range === "MONTH") {
+    return Array.from({ length: 4 }, (_, index) => {
+      const start = startOfDay(addDays(now, (index - 3) * 7));
+      return { label: `W${index + 1}`, start, end: addDays(start, 7) };
+    });
+  }
+  return Array.from({ length: 12 }, (_, index) => {
+    const start = new Date(now.getFullYear(), index, 1);
+    const end = new Date(now.getFullYear(), index + 1, 1);
+    return { label: start.toLocaleDateString("en-IN", { month: "short" }), start, end };
+  });
+}
+
+function startOfDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function isInRange(date: Date, start: Date, end: Date) {
+  return date >= start && date < end;
+}
+
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
     center: { flex: 1, alignItems: "center", justifyContent: "center" },
@@ -438,6 +618,41 @@ function createStyles(colors: ThemeColors) {
     analyticsCard: { flexGrow: 1, flexBasis: "30%", minHeight: 62, justifyContent: "center", padding: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
     analyticsValue: { color: colors.cyan, fontSize: 16, fontWeight: "900" },
     analyticsLabel: { color: colors.muted, fontSize: 9, fontWeight: "800", marginTop: 6 },
+    rangeTabs: { flexDirection: "row", gap: 8, marginBottom: 10 },
+    rangeTab: { flex: 1, minHeight: 38, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
+    rangeTabActive: { borderColor: colors.cyan, backgroundColor: colors.activePanel },
+    rangeText: { color: colors.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
+    rangeTextActive: { color: colors.cyan },
+    visualPanel: { padding: 14, borderWidth: 1, borderColor: colors.heroBorder, borderRadius: 8, backgroundColor: colors.panelRaised },
+    visualTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10 },
+    visualTitle: { color: colors.text, fontSize: 15, fontWeight: "900" },
+    visualSub: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 5 },
+    visualAmount: { color: colors.green, fontSize: 14, fontWeight: "900" },
+    visualSummary: { flexDirection: "row", gap: 8, marginTop: 12 },
+    miniStat: { flex: 1, minHeight: 58, justifyContent: "center", padding: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
+    miniValue: { color: colors.text, fontSize: 13, fontWeight: "900" },
+    miniLabel: { color: colors.muted, fontSize: 9, fontWeight: "800", marginTop: 6 },
+    chartBlock: { marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border },
+    chartTitle: { color: colors.text, fontSize: 12, fontWeight: "900", letterSpacing: 0.8 },
+    barChart: { minHeight: 134, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 7, marginTop: 12 },
+    barColumn: { flex: 1, alignItems: "center", justifyContent: "flex-end" },
+    barStack: { height: 96, width: "100%", alignItems: "center", justifyContent: "flex-end" },
+    dualBars: { height: "100%", flexDirection: "row", alignItems: "flex-end", justifyContent: "center", gap: 4 },
+    requestBar: { width: 8, borderTopLeftRadius: 8, borderTopRightRadius: 8, backgroundColor: colors.amber },
+    completedBar: { width: 8, borderTopLeftRadius: 8, borderTopRightRadius: 8, backgroundColor: colors.green },
+    incomeBar: { width: 18, borderTopLeftRadius: 8, borderTopRightRadius: 8, backgroundColor: colors.green },
+    barLabel: { color: colors.muted, fontSize: 8, fontWeight: "900", marginTop: 8 },
+    legendRow: { flexDirection: "row", gap: 14, marginTop: 8 },
+    legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+    legendDot: { width: 8, height: 8, borderRadius: 4 },
+    legendText: { color: colors.muted, fontSize: 9, fontWeight: "800" },
+    statusPanel: { marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border },
+    statusTrack: { height: 14, flexDirection: "row", overflow: "hidden", marginTop: 12, borderRadius: 999, backgroundColor: colors.border },
+    statusSegment: { height: "100%" },
+    statusList: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
+    statusItem: { flexBasis: "48%", flexDirection: "row", alignItems: "center", gap: 7 },
+    statusLabelText: { flex: 1, color: colors.muted, fontSize: 10, fontWeight: "800" },
+    statusPercent: { color: colors.text, fontSize: 10, fontWeight: "900" },
     card: { padding: 14, marginBottom: 9, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
     top: { flexDirection: "row", justifyContent: "space-between", gap: 10 },
     copy: { flex: 1 },
