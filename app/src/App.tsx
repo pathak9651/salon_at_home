@@ -8,6 +8,7 @@ import { AdminBookingsScreen } from "./screens/admin/AdminBookingsScreen";
 import { AdminHomeScreen } from "./screens/admin/AdminHomeScreen";
 import { AdminPaymentsScreen } from "./screens/admin/AdminPaymentsScreen";
 import { AuthScreen } from "./screens/auth/AuthScreen";
+import { WelcomeScreen } from "./screens/auth/WelcomeScreen";
 import { MyBookingsScreen } from "./screens/bookings/MyBookingsScreen";
 import { ClientHomeScreen } from "./screens/client/ClientHomeScreen";
 import { NotificationsScreen } from "./screens/notifications/NotificationsScreen";
@@ -44,6 +45,7 @@ function AppContent() {
   const styles = createStyles(colors);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authStarted, setAuthStarted] = useState(false);
   const [tab, setTab] = useState<Tab>("home");
   const [unreadNotifications, setUnreadNotifications] = useState(0);
 
@@ -104,7 +106,12 @@ function AppContent() {
   }
 
   if (!session) {
-    return <SafeAreaView style={styles.safe}><ExpoStatusBar hidden={false} style={mode === "dark" ? "light" : "dark"} backgroundColor={colors.bar} /><AuthScreen onAuthenticated={handleAuthenticated} /></SafeAreaView>;
+    return (
+      <SafeAreaView style={styles.safe}>
+        <ExpoStatusBar hidden={false} style={mode === "dark" ? "light" : "dark"} backgroundColor={colors.bar} />
+        {authStarted ? <AuthScreen onAuthenticated={handleAuthenticated} /> : <WelcomeScreen onGetStarted={() => setAuthStarted(true)} />}
+      </SafeAreaView>
+    );
   }
 
   return (
