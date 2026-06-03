@@ -1,13 +1,15 @@
 import * as Location from "expo-location";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { apiRequest } from "../../api/client";
+import { apiAssetUrl, apiRequest } from "../../api/client";
 import { ThemeColors, useTheme } from "../../utils/theme";
 import { KeyboardAwareScreen } from "../common/KeyboardAwareScreen";
 import { ScreenHeader } from "../common/ScreenHeader";
 
 type Coordinates = { latitude: number; longitude: number };
+type GenderPreference = "M" | "F";
 type Service = { id: string; name: string; description?: string | null; price: number; durationMin: number };
 type SalonImage = { id: string; url: string; caption?: string | null };
 type Review = { id: string; rating: number; comment?: string | null; createdAt: string; client?: { name?: string | null } };
@@ -42,6 +44,8 @@ const serviceFilters = ["Haircut", "Hair spa", "Skin care", "Grooming"];
 const ratingFilters = [0, 3, 4, 4.5];
 const distanceFilters = [5, 10, 25, 50];
 const priceFilters = [0, 500, 1000, 2000];
+const menKeywords = ["men", "male", "boy", "gents", "gentleman", "beard", "shave", "trim", "grooming", "haircut"];
+const womenKeywords = ["women", "female", "girl", "ladies", "bridal", "makeup", "facial", "wax", "threading", "manicure", "pedicure", "spa", "skin"];
 
 export function ClientHomeScreen({ token, onBookingCompleted }: { token: string; onBookingCompleted: () => void }) {
   const { colors } = useTheme();
@@ -59,6 +63,7 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
   const [bookingInstructions, setBookingInstructions] = useState("");
   const [bookingConfirmation, setBookingConfirmation] = useState<BookingConfirmation | null>(null);
   const [bookingSuccess, setBookingSuccess] = useState("");
+  const [genderPreference, setGenderPreference] = useState<GenderPreference>("M");
   const [search, setSearch] = useState("");
   const [service, setService] = useState("");
   const [minRating, setMinRating] = useState(0);
@@ -261,9 +266,17 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
   }
 
   const activeFilterCount = (radiusKm !== 25 ? 1 : 0) + (minRating ? 1 : 0) + (maxPrice ? 1 : 0) + (service ? 1 : 0);
+  const suggestedSalons = sortSalonsForGender(salons, genderPreference);
+  const featuredSalon = suggestedSalons[0] ?? salons[0] ?? null;
+  const featuredServices = genderFilteredServices(suggestedSalons, genderPreference).slice(0, 8);
+  const nearbyDeals = suggestedSalons.slice(0, 6);
+  const suggestionLabel = genderPreference === "M" ? "Men's grooming" : "Women's beauty";
 
   if (selectedSalon) {
     const gallery = [selectedSalon.coverImageUrl, selectedSalon.imageUrl, ...selectedSalon.images.map((image) => image.url)].filter(Boolean) as string[];
+    const selectedServices = selectedSalon.services.filter((item) => selectedServiceIds.includes(item.id));
+    const bookingTotal = selectedServices.reduce((sum, item) => sum + item.price, 0);
+    const readySteps = [selectedServiceIds.length > 0, !!bookingDate && !!bookingTime, !!bookingAddress.trim()].filter(Boolean).length;
     return (
       <KeyboardAwareScreen contentContainerStyle={styles.page}>
         <TouchableOpacity onPress={() => setSelectedSalon(null)} style={styles.secondary}><Text style={styles.secondaryText}>BACK TO SALONS</Text></TouchableOpacity>
@@ -291,7 +304,16 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
 
         <Text style={styles.section}>BOOK AT HOME</Text>
         <View style={styles.bookingPanel}>
-          <Text style={styles.stepLabel}>1. CHOOSE SERVICES</Text>
+          <View style={styles.bookingHero}>
+            <View style={styles.bookingHeroIcon}><Ionicons name="calendar-outline" size={24} color={colors.cyan} /></View>
+            <View style={styles.salonCopy}>
+              <Text style={styles.bookingHeroTitle}>Build your home visit</Text>
+              <Text style={styles.bookingHeroMeta}>{readySteps}/3 required steps ready</Text>
+            </View>
+            <Text style={styles.bookingHeroAmount}>INR {bookingTotal}</Text>
+          </View>
+
+          <StepHeader number="1" title="Choose services" done={selectedServiceIds.length > 0} styles={styles} />
           {selectedSalon.services.length ? selectedSalon.services.map((item) => (
             <TouchableOpacity onPress={() => toggleService(item.id)} style={[styles.serviceRow, selectedServiceIds.includes(item.id) && styles.serviceSelected]} key={item.id}>
               <View style={styles.checkCircle}><Text style={selectedServiceIds.includes(item.id) ? styles.checkActive : styles.checkInactive}>{selectedServiceIds.includes(item.id) ? "✓" : "+"}</Text></View>
@@ -303,10 +325,15 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
               <Text style={styles.charge}>INR {item.price}</Text>
             </TouchableOpacity>
           )) : <Text style={styles.empty}>No services listed.</Text>}
+          {selectedServices.length ? <View style={styles.selectedStrip}>
+            {selectedServices.map((item) => <View style={styles.selectedPill} key={item.id}><Text style={styles.selectedPillText}>{item.name}</Text></View>)}
+          </View> : null}
 
-          <Text style={styles.stepLabel}>2. SELECT DATE & TIME</Text>
-          <TouchableOpacity onPress={autofillBookingTime} style={styles.quickButton}><Text style={styles.secondaryText}>USE NEXT AVAILABLE SLOT</Text></TouchableOpacity>
-          <View style={styles.bookingStack}>
+          <StepHeader number="2" title="Select date and time" done={!!bookingDate && !!bookingTime} styles={styles} />
+          <TouchableOpacity accessibilityLabel="Use next available slot" accessibilityRole="button" onPress={autofillBookingTime} style={styles.quickIconButton}>
+            <Ionicons name="flash-outline" size={22} color={colors.cyan} />
+          </TouchableOpacity>
+          <View style={styles.bookingGrid}>
             <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.bookingPicker}>
               <Text style={styles.pickerLabel}>DATE</Text>
               <Text style={bookingDate ? styles.pickerValue : styles.pickerPlaceholder}>{bookingDate || "Select date"}</Text>
@@ -319,18 +346,21 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
           {showDatePicker && <DateTimePicker value={bookingDateValue ?? new Date()} mode="date" minimumDate={new Date()} display="default" onChange={updateBookingDate} />}
           {showTimePicker && <DateTimePicker value={bookingTimeValue ?? new Date()} mode="time" display="default" onChange={updateBookingTime} />}
 
-          <Text style={styles.stepLabel}>3. ADD HOME ADDRESS</Text>
-          <TouchableOpacity disabled={bookingAddressLoading} onPress={() => void autofillBookingAddress()} style={styles.quickButton}>
-            {bookingAddressLoading ? <ActivityIndicator color={colors.cyan} /> : <Text style={styles.secondaryText}>AUTO DETECT ADDRESS</Text>}
+          <StepHeader number="3" title="Add home address" done={!!bookingAddress.trim()} styles={styles} />
+          <TouchableOpacity accessibilityLabel="Auto detect address" accessibilityRole="button" disabled={bookingAddressLoading} onPress={() => void autofillBookingAddress()} style={styles.quickIconButton}>
+            {bookingAddressLoading ? <ActivityIndicator color={colors.cyan} /> : <Ionicons name="locate" size={22} color={colors.cyan} />}
           </TouchableOpacity>
           <TextInput value={bookingAddress} onChangeText={setBookingAddress} placeholder="Home service address" placeholderTextColor={colors.placeholder} style={[styles.bookingInput, styles.addressInput]} multiline />
 
-          <Text style={styles.stepLabel}>4. INSTRUCTIONS</Text>
+          <StepHeader number="4" title="Instructions" done={!!bookingInstructions.trim()} optional styles={styles} />
           <TextInput value={bookingInstructions} onChangeText={setBookingInstructions} placeholder="Booking instructions, access notes, preferences" placeholderTextColor={colors.placeholder} style={[styles.bookingInput, styles.instructionsInput]} multiline />
           <View style={styles.bookingSummaryCard}>
-            <Text style={styles.summaryTitle}>BOOKING SUMMARY</Text>
-            <Text style={styles.summaryLine}>{selectedServiceIds.length || 0} service(s)</Text>
-            <Text style={styles.summaryAmount}>INR {selectedSalon.services.filter((item) => selectedServiceIds.includes(item.id)).reduce((sum, item) => sum + item.price, 0)}</Text>
+            <View>
+              <Text style={styles.summaryTitle}>BOOKING SUMMARY</Text>
+              <Text style={styles.summaryLine}>{selectedServices.length || 0} service(s) selected</Text>
+              <Text style={styles.summaryLine}>{bookingDate && bookingTime ? `${bookingDate} at ${bookingTime}` : "Choose date and time"}</Text>
+            </View>
+            <Text style={styles.summaryAmount}>INR {bookingTotal}</Text>
           </View>
           {!!bookingSuccess && <View style={styles.successBadge}>
             <Text style={styles.successTitle}>{bookingSuccess}</Text>
@@ -340,23 +370,58 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
             {bookingLoading ? <ActivityIndicator color={colors.buttonText} /> : <Text style={styles.primaryText}>CONFIRM BOOKING</Text>}
           </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={() => void openMaps(selectedSalon)} style={styles.primary}><Text style={styles.primaryText}>OPEN IN GOOGLE MAPS</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityLabel="Open in Google Maps" accessibilityRole="button" onPress={() => void openMaps(selectedSalon)} style={styles.mapIconButton}>
+          <Ionicons name="map-outline" size={22} color={colors.buttonText} />
+        </TouchableOpacity>
       </KeyboardAwareScreen>
     );
   }
 
   return (
     <KeyboardAwareScreen contentContainerStyle={styles.page}>
-      <ScreenHeader eyebrow="SALON AT HOME // CLIENT" title="Salon discovery" subtitle="Search nearby salons and compare distance, ratings, services, and charges." />
-      <View style={styles.location}>
+      <View style={styles.clientTop}>
         <View>
-          <Text style={styles.online}>{location ? "LOCATION ACTIVE" : "LOCATION REQUIRED"}</Text>
-          <Text style={styles.locationText}>{area}</Text>
+          <View style={styles.locationTitleRow}>
+            <Ionicons name="location" size={24} color={colors.cyan} />
+            <Text style={styles.locationTitle}>{area.split(",")[0] || "Your area"}</Text>
+          </View>
+          <Text style={styles.locationSub}>{location ? area : "Detect location for nearby salons"}</Text>
         </View>
-        <TouchableOpacity disabled={loadingLocation} onPress={() => void detectLocation()} style={styles.detectButton}>
-          {loadingLocation ? <ActivityIndicator color={colors.buttonText} /> : <Text style={styles.detectText}>DETECT</Text>}
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <View style={styles.genderToggle}>
+            <TouchableOpacity onPress={() => setGenderPreference("M")} style={genderPreference === "M" ? styles.genderActive : styles.genderIdle}><Text style={genderPreference === "M" ? styles.genderActiveText : styles.genderIdleText}>M</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => setGenderPreference("F")} style={genderPreference === "F" ? styles.genderActive : styles.genderIdle}><Text style={genderPreference === "F" ? styles.genderActiveText : styles.genderIdleText}>F</Text></TouchableOpacity>
+          </View>
+        </View>
       </View>
+
+      <TouchableOpacity disabled={loadingLocation} onPress={() => void detectLocation()} style={styles.detectStrip}>
+        {loadingLocation ? <ActivityIndicator color={colors.buttonText} /> : <>
+          <Ionicons name="navigate" size={16} color={colors.buttonText} />
+          <Text style={styles.detectText}>{location ? "Refresh nearby salons" : "Detect current location"}</Text>
+        </>}
+      </TouchableOpacity>
+
+      <View style={styles.heroBanner}>
+        <View style={styles.heroCopy}>
+          <Text style={styles.heroKicker}>{suggestionLabel.toUpperCase()}</Text>
+          <Text style={styles.heroTitle}>Salon at home in 30 minutes</Text>
+          <TouchableOpacity onPress={() => featuredSalon ? void openDetails(featuredSalon) : undefined} style={styles.bookNowBadge}>
+            <Text style={styles.bookNowText}>Book Now</Text>
+          </TouchableOpacity>
+        </View>
+        {featuredSalon?.coverImageUrl ? (
+          <Image source={{ uri: apiAssetUrl(featuredSalon.coverImageUrl) }} style={styles.heroImage} />
+        ) : (
+          <View style={styles.heroIllustration}><Ionicons name="cut" size={56} color={colors.cyan} /></View>
+        )}
+      </View>
+
+      <TouchableOpacity onPress={() => setShowFilters((current) => !current)} style={styles.promoStrip}>
+        <Text style={styles.promoStrong}>SALON SILVER</Text>
+        <Text style={styles.promoText}>Get 15% OFF on all bookings</Text>
+        <Ionicons name="chevron-forward" size={22} color={colors.text} />
+      </TouchableOpacity>
 
       <TextInput value={search} onChangeText={setSearch} placeholder="Search salon, area, or service" placeholderTextColor={colors.placeholder} style={styles.searchInput} />
       <View style={styles.actions}>
@@ -378,19 +443,56 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
       </View>}
 
       {!!error && <Text style={styles.error}>{error}</Text>}
-      <Text style={styles.section}>SALONS</Text>
+
+      <View style={styles.sectionHeader}>
+        <View>
+          <Text style={styles.sectionTitle}><Text style={styles.accentWord}>Insta</Text> Salon At Home</Text>
+          <Text style={styles.sectionSub}>{suggestionLabel} in <Text style={styles.accentWord}>30 mins</Text></Text>
+        </View>
+        <TouchableOpacity onPress={() => void loadSalons()}><Text style={styles.seeAll}>See all</Text></TouchableOpacity>
+      </View>
       {loadingSalons ? <ActivityIndicator color={colors.cyan} /> : null}
       {!loadingSalons && !salons.length ? <Text style={styles.empty}>No salons match these filters.</Text> : null}
-      {salons.map((salon) => (
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.serviceRail}>
+        {featuredServices.map((item, index) => (
+          <TouchableOpacity onPress={() => void openDetails(item.salon)} style={styles.serviceTile} key={`${item.salon.id}-${item.id}-${index}`}>
+            {item.salon.coverImageUrl ? <Image source={{ uri: apiAssetUrl(item.salon.coverImageUrl) }} style={styles.serviceImage} /> : <View style={styles.serviceImageFallback}><Ionicons name="sparkles" size={34} color={colors.cyan} /></View>}
+            <Text style={styles.serviceName}>{item.name}</Text>
+            <Text style={styles.servicePrice}>INR {item.price}</Text>
+            <View style={styles.serviceBook}><Text style={styles.serviceBookText}>Book</Text></View>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      <View style={styles.divider} />
+
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>At the Salon Deals</Text>
+        <TouchableOpacity onPress={() => void loadSalons()}><Text style={styles.seeAll}>See all</Text></TouchableOpacity>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dealRail}>
+        {nearbyDeals.map((salon, index) => (
+          <TouchableOpacity onPress={() => void openDetails(salon)} style={styles.dealCard} key={`${salon.id}-${index}`}>
+            {salon.coverImageUrl ? <Image source={{ uri: apiAssetUrl(salon.coverImageUrl) }} style={styles.dealImage} /> : <View style={styles.dealImageFallback}><Text style={styles.code}>SA</Text></View>}
+            <Text style={styles.dealTitle}>{salon.name}</Text>
+            <Text style={styles.dealMeta}>{ratingText(salon)}{salon.distanceKm !== null && salon.distanceKm !== undefined ? ` | ${salon.distanceKm.toFixed(1)} km` : ""}</Text>
+            <Text style={styles.dealPrice}>{serviceText(salon)}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      <Text style={styles.section}>NEARBY SALONS</Text>
+      {suggestedSalons.map((salon) => (
         <TouchableOpacity onPress={() => void openDetails(salon)} style={styles.salon} key={salon.id}>
-          {salon.coverImageUrl ? <Image source={{ uri: salon.coverImageUrl }} style={styles.coverThumb} /> : <View style={styles.coverFallback}><Text style={styles.code}>SA</Text></View>}
+          {salon.coverImageUrl ? <Image source={{ uri: apiAssetUrl(salon.coverImageUrl) }} style={styles.coverThumb} /> : <View style={styles.coverFallback}><Text style={styles.code}>SA</Text></View>}
           <View style={styles.salonCopy}>
             <Text style={styles.name}>{salon.name}</Text>
             <Text style={styles.rating}>{ratingText(salon)}{salon.distanceKm !== null && salon.distanceKm !== undefined ? `  |  ${salon.distanceKm.toFixed(1)} km` : ""}</Text>
             <Text style={styles.address}>{salon.address}</Text>
             <Text style={styles.meta}>{serviceText(salon)}</Text>
           </View>
-          <TouchableOpacity onPress={() => void openMaps(salon)} style={styles.mapBadge}><Text style={styles.mapText}>MAP</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => void openMaps(salon)} style={styles.mapBadge}><Ionicons name="map-outline" size={19} color={colors.cyan} /></TouchableOpacity>
         </TouchableOpacity>
       ))}
     </KeyboardAwareScreen>
@@ -398,7 +500,17 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
 }
 
 function FilterRow({ values, active, onPress, styles }: { values: string[]; active: string; onPress: (value: string) => void; styles: ReturnType<typeof createStyles> }) {
-  return <ScrollView horizontal showsHorizontalScrollIndicator={false}>{values.map((value) => <TouchableOpacity key={value} onPress={() => onPress(value)} style={[styles.filter, active === value && styles.filterActive]}><Text style={[styles.filterText, active === value && styles.filterTextActive]}>{value}</Text></TouchableOpacity>)}</ScrollView>;
+  return <ScrollView horizontal showsHorizontalScrollIndicator={false}>{values.map((value, index) => <TouchableOpacity key={`${value}-${index}`} onPress={() => onPress(value)} style={[styles.filter, active === value && styles.filterActive]}><Text style={[styles.filterText, active === value && styles.filterTextActive]}>{value}</Text></TouchableOpacity>)}</ScrollView>;
+}
+
+function StepHeader({ number, title, done, optional = false, styles }: { number: string; title: string; done: boolean; optional?: boolean; styles: ReturnType<typeof createStyles> }) {
+  return (
+    <View style={styles.stepHeader}>
+      <View style={[styles.stepDot, done && styles.stepDotDone]}><Text style={styles.stepDotText}>{done ? "✓" : number}</Text></View>
+      <Text style={styles.stepTitle}>{title}</Text>
+      {optional && <Text style={styles.optionalText}>OPTIONAL</Text>}
+    </View>
+  );
 }
 
 function ratingText(salon: Salon) {
@@ -412,9 +524,79 @@ function serviceText(salon: Salon) {
   return `${salon.services.slice(0, 2).map((item) => item.name).join(", ")} | From INR ${cheapest}`;
 }
 
+function serviceMatchesGender(service: Service, gender: GenderPreference) {
+  const haystack = `${service.name} ${service.description ?? ""}`.toLowerCase();
+  const keywords = gender === "M" ? menKeywords : womenKeywords;
+  return keywords.some((keyword) => haystack.includes(keyword));
+}
+
+function salonMatchScore(salon: Salon, gender: GenderPreference) {
+  const salonText = `${salon.name} ${salon.description ?? ""}`.toLowerCase();
+  const keywords = gender === "M" ? menKeywords : womenKeywords;
+  const salonScore = keywords.some((keyword) => salonText.includes(keyword)) ? 2 : 0;
+  return salonScore + salon.services.filter((item) => serviceMatchesGender(item, gender)).length;
+}
+
+function sortSalonsForGender(salons: Salon[], gender: GenderPreference) {
+  return [...salons].sort((left, right) => {
+    const scoreDiff = salonMatchScore(right, gender) - salonMatchScore(left, gender);
+    if (scoreDiff) return scoreDiff;
+    return (left.distanceKm ?? Number.MAX_SAFE_INTEGER) - (right.distanceKm ?? Number.MAX_SAFE_INTEGER);
+  });
+}
+
+function genderFilteredServices(salons: Salon[], gender: GenderPreference) {
+  const matched = salons.flatMap((salon) => salon.services.filter((item) => serviceMatchesGender(item, gender)).map((item) => ({ ...item, salon })));
+  if (matched.length) return matched;
+  return salons.flatMap((salon) => salon.services.slice(0, 3).map((item) => ({ ...item, salon })));
+}
+
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
     page: { padding: 20, paddingBottom: 28 },
+    clientTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 },
+    locationTitleRow: { flexDirection: "row", alignItems: "center", gap: 7 },
+    locationTitle: { color: colors.text, fontSize: 24, fontWeight: "900" },
+    locationSub: { color: colors.muted, fontSize: 13, fontWeight: "700", marginTop: 6, maxWidth: 220 },
+    headerActions: { flexDirection: "row", alignItems: "center", gap: 10 },
+    genderToggle: { flexDirection: "row", alignItems: "center", width: 88, height: 44, padding: 3, borderWidth: 1, borderColor: colors.cyan, borderRadius: 8 },
+    genderActive: { flex: 1, height: "100%", alignItems: "center", justifyContent: "center", borderRadius: 6, backgroundColor: colors.cyan },
+    genderIdle: { flex: 1, height: "100%", alignItems: "center", justifyContent: "center" },
+    genderActiveText: { color: colors.buttonText, fontSize: 18, fontWeight: "900" },
+    genderIdleText: { color: colors.cyan, fontSize: 18, fontWeight: "900" },
+    detectStrip: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 38, marginBottom: 12, borderRadius: 8, backgroundColor: colors.cyan },
+    heroBanner: { minHeight: 190, flexDirection: "row", overflow: "hidden", borderRadius: 8, borderWidth: 1, borderColor: colors.heroBorder, backgroundColor: colors.panelRaised },
+    heroCopy: { flex: 1.12, justifyContent: "center", padding: 22 },
+    heroKicker: { color: colors.amber, fontSize: 10, fontWeight: "900", letterSpacing: 1.4 },
+    heroTitle: { color: colors.text, fontSize: 29, fontWeight: "900", lineHeight: 36, marginTop: 10 },
+    bookNowBadge: { alignSelf: "flex-start", marginTop: 18, paddingHorizontal: 15, paddingVertical: 9, borderRadius: 6, backgroundColor: colors.amber },
+    bookNowText: { color: colors.background, fontSize: 16, fontWeight: "900" },
+    heroImage: { width: 132, height: "100%", backgroundColor: colors.panel, resizeMode: "cover" },
+    heroIllustration: { width: 132, alignItems: "center", justifyContent: "center", backgroundColor: colors.activePanel },
+    promoStrip: { minHeight: 52, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, marginTop: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bar },
+    promoStrong: { color: colors.text, fontSize: 15, fontWeight: "900" },
+    promoText: { flex: 1, color: colors.text, fontSize: 13, fontWeight: "800" },
+    sectionHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginTop: 28, marginBottom: 12 },
+    sectionTitle: { color: colors.text, fontSize: 24, fontWeight: "900" },
+    sectionSub: { color: colors.text, fontSize: 22, fontWeight: "800", marginTop: 4 },
+    accentWord: { color: colors.cyan },
+    seeAll: { color: colors.cyan, fontSize: 16, fontWeight: "800", paddingTop: 5 },
+    serviceRail: { gap: 14, paddingRight: 20, paddingBottom: 8 },
+    serviceTile: { width: 168, minHeight: 260, justifyContent: "space-between", padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
+    serviceImage: { width: "100%", height: 112, borderRadius: 7, backgroundColor: colors.panelRaised },
+    serviceImageFallback: { width: "100%", height: 112, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.activePanel },
+    serviceName: { color: colors.text, fontSize: 17, fontWeight: "800", lineHeight: 21, marginTop: 10 },
+    servicePrice: { color: colors.green, fontSize: 19, fontWeight: "900", marginTop: 10 },
+    serviceBook: { minHeight: 42, alignItems: "center", justifyContent: "center", marginTop: 12, borderWidth: 1, borderColor: colors.cyan, borderRadius: 7 },
+    serviceBookText: { color: colors.cyan, fontSize: 15, fontWeight: "900" },
+    divider: { height: 8, marginHorizontal: -20, marginTop: 22, backgroundColor: colors.border, opacity: 0.45 },
+    dealRail: { gap: 12, paddingRight: 20, paddingBottom: 8 },
+    dealCard: { width: 210, padding: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
+    dealImage: { width: "100%", height: 104, borderRadius: 7, backgroundColor: colors.panelRaised },
+    dealImageFallback: { width: "100%", height: 104, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.panelRaised },
+    dealTitle: { color: colors.text, fontSize: 15, fontWeight: "900", marginTop: 10 },
+    dealMeta: { color: colors.amber, fontSize: 10, fontWeight: "800", marginTop: 6 },
+    dealPrice: { color: colors.muted, fontSize: 11, lineHeight: 16, marginTop: 6 },
     location: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, padding: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
     online: { color: colors.green, fontSize: 9, fontWeight: "800", letterSpacing: 1 },
     locationText: { color: colors.text, fontSize: 12, marginTop: 5 },
@@ -464,22 +646,39 @@ function createStyles(colors: ThemeColors) {
     checkCircle: { width: 30, height: 30, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan },
     checkActive: { color: colors.cyan, fontSize: 18, fontWeight: "900" },
     checkInactive: { color: colors.muted, fontSize: 18, fontWeight: "900" },
-    bookingPanel: { padding: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    bookingPanel: { padding: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
+    bookingHero: { flexDirection: "row", alignItems: "center", gap: 12, padding: 13, marginBottom: 12, borderWidth: 1, borderColor: colors.heroBorder, borderRadius: 8, backgroundColor: colors.panelRaised },
+    bookingHeroIcon: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan, borderRadius: 8, backgroundColor: colors.activePanel },
+    bookingHeroTitle: { color: colors.text, fontSize: 15, fontWeight: "900" },
+    bookingHeroMeta: { color: colors.muted, fontSize: 10, fontWeight: "800", marginTop: 5 },
+    bookingHeroAmount: { color: colors.cyan, fontSize: 16, fontWeight: "900" },
+    stepHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 14, marginBottom: 10 },
+    stepDot: { width: 26, height: 26, alignItems: "center", justifyContent: "center", borderRadius: 13, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
+    stepDotDone: { borderColor: colors.green, backgroundColor: colors.successPanel },
+    stepDotText: { color: colors.text, fontSize: 11, fontWeight: "900" },
+    stepTitle: { flex: 1, color: colors.text, fontSize: 13, fontWeight: "900" },
+    optionalText: { color: colors.muted, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
     stepLabel: { color: colors.amber, fontSize: 10, fontWeight: "900", letterSpacing: 1.2, marginTop: 14, marginBottom: 10 },
-    quickButton: { alignItems: "center", justifyContent: "center", minHeight: 42, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.cyan, marginBottom: 10 },
+    quickButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 42, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.cyan, borderRadius: 8, marginBottom: 10 },
+    quickIconButton: { alignSelf: "flex-end", width: 44, height: 42, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan, borderRadius: 8, marginBottom: 10, backgroundColor: colors.panel },
     bookingStack: { gap: 0 },
-    bookingPicker: { padding: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, marginBottom: 10 },
+    bookingGrid: { flexDirection: "row", gap: 10 },
+    bookingPicker: { flex: 1, padding: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.background, marginBottom: 10 },
     pickerLabel: { color: colors.muted, fontSize: 9, fontWeight: "900", letterSpacing: 1, marginBottom: 6 },
     pickerValue: { color: colors.text, fontSize: 15, fontWeight: "800" },
     pickerPlaceholder: { color: colors.placeholder, fontSize: 15, fontWeight: "700" },
-    bookingInput: { color: colors.text, padding: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, fontSize: 13, marginBottom: 10 },
+    bookingInput: { color: colors.text, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.background, fontSize: 13, marginBottom: 10 },
     addressInput: { minHeight: 64, textAlignVertical: "top" },
     instructionsInput: { minHeight: 78, textAlignVertical: "top" },
-    bookingSummaryCard: { padding: 14, marginTop: 4, marginBottom: 10, borderWidth: 1, borderColor: colors.heroBorder, backgroundColor: colors.panelRaised },
+    selectedStrip: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 2, marginBottom: 2 },
+    selectedPill: { paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: colors.cyan, borderRadius: 999, backgroundColor: colors.activePanel },
+    selectedPillText: { color: colors.cyan, fontSize: 10, fontWeight: "900" },
+    bookingSummaryCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 14, marginTop: 4, marginBottom: 10, borderWidth: 1, borderColor: colors.heroBorder, borderRadius: 8, backgroundColor: colors.panelRaised },
     summaryTitle: { color: colors.muted, fontSize: 9, fontWeight: "900", letterSpacing: 1.2 },
     summaryLine: { color: colors.text, fontSize: 12, fontWeight: "800", marginTop: 8 },
     summaryAmount: { color: colors.cyan, fontSize: 20, fontWeight: "900", marginTop: 8 },
     confirmButton: { alignItems: "center", justifyContent: "center", minHeight: 50, paddingHorizontal: 14, backgroundColor: colors.cyan, marginTop: 4 },
+    mapIconButton: { alignSelf: "flex-end", width: 48, height: 44, alignItems: "center", justifyContent: "center", marginTop: 10, borderRadius: 8, backgroundColor: colors.cyan },
     successBadge: { padding: 14, marginBottom: 10, borderWidth: 1, borderColor: colors.green, backgroundColor: colors.successPanel },
     successTitle: { color: colors.green, fontSize: 13, fontWeight: "900" },
     successText: { color: colors.text, fontSize: 11, fontWeight: "700", marginTop: 6 },

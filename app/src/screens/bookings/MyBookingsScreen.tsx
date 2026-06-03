@@ -1,4 +1,5 @@
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, NativeModules, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { apiRequest } from "../../api/client";
@@ -252,6 +253,7 @@ export function MyBookingsScreen({ token }: { token: string }) {
   const upcoming = bookings.filter((booking) => ["PENDING", "ACCEPTED"].includes(booking.status) && new Date(booking.scheduledAt) >= new Date());
   const awaitingPayment = bookings.filter((booking) => booking.status === "PAYMENT_PENDING");
   const completed = bookings.filter((booking) => !upcoming.some((item) => item.id === booking.id) && booking.status !== "PAYMENT_PENDING");
+  const paidPayments = payments.filter((payment) => payment.status === "PAID");
 
   if (loading) return <View style={styles.center}><ActivityIndicator color={colors.cyan} /></View>;
 
@@ -261,19 +263,25 @@ export function MyBookingsScreen({ token }: { token: string }) {
       {!!notice && <Text style={styles.notice}>{notice}</Text>}
       {!!error && <Text style={styles.error}>{error}</Text>}
 
-      <Text style={styles.section}>UPCOMING</Text>
+      <View style={styles.summaryGrid}>
+        <BookingMetric styles={styles} icon="calendar-outline" label="Upcoming" value={String(upcoming.length)} />
+        <BookingMetric styles={styles} icon="card-outline" label="Pay now" value={String(awaitingPayment.length)} />
+        <BookingMetric styles={styles} icon="receipt-outline" label="Invoices" value={String(paidPayments.length)} />
+      </View>
+
+      <SectionTitle styles={styles} title="Upcoming" count={upcoming.length} />
       {upcoming.length ? upcoming.map((booking) => <BookingCard booking={booking} key={booking.id} styles={styles} saving={saving} onCancel={cancelBooking} onStartReschedule={startReschedule} reschedulingBookingId={reschedulingBookingId} rescheduleDate={rescheduleDate} rescheduleTime={rescheduleTime} setShowDatePicker={setShowDatePicker} setShowTimePicker={setShowTimePicker} onSubmitReschedule={submitReschedule} onPay={payForBooking} onInvoice={showInvoice} />) : <Text style={styles.empty}>No upcoming bookings.</Text>}
 
       {showDatePicker && <DateTimePicker value={rescheduleDateValue ?? new Date()} mode="date" minimumDate={new Date()} display="default" onChange={updateDate} />}
       {showTimePicker && <DateTimePicker value={rescheduleTimeValue ?? new Date()} mode="time" display="default" onChange={updateTime} />}
 
-      <Text style={styles.section}>AWAITING PAYMENT</Text>
+      <SectionTitle styles={styles} title="Awaiting payment" count={awaitingPayment.length} />
       {awaitingPayment.length ? awaitingPayment.map((booking) => <BookingCard booking={booking} key={booking.id} styles={styles} saving={saving} onPay={payForBooking} onInvoice={showInvoice} />) : <Text style={styles.empty}>No payment requests right now.</Text>}
 
-      <Text style={styles.section}>COMPLETED</Text>
+      <SectionTitle styles={styles} title="History" count={completed.length} />
       {completed.length ? completed.map((booking) => <BookingCard booking={booking} key={booking.id} styles={styles} saving={saving} onPay={payForBooking} onInvoice={showInvoice} onStartReview={startReview} onSubmitReview={submitReview} reviewingBookingId={reviewingBookingId} reviewRating={reviewRating} reviewComment={reviewComment} setReviewRating={setReviewRating} setReviewComment={setReviewComment} />) : <Text style={styles.empty}>No completed bookings yet.</Text>}
 
-      <Text style={styles.section}>PAYMENT HISTORY</Text>
+      <SectionTitle styles={styles} title="Payment history" count={payments.length} />
       {payments.length ? payments.map((payment) => (
         <View style={styles.paymentCard} key={payment.id}>
           <View>
@@ -349,12 +357,13 @@ function BookingCard({
       <View style={styles.bookingTop}>
         <View style={styles.bookingCopy}>
           <Text style={styles.bookingTitle}>{serviceNames(booking)}</Text>
-          <Text style={styles.bookingMeta}>{booking.salon?.name ?? "Salon"} | {new Date(booking.scheduledAt).toLocaleString()}</Text>
-          <Text style={styles.bookingMeta}>{booking.address}</Text>
+          <View style={styles.metaRow}><Ionicons name="storefront-outline" size={13} color={styles.placeholder.color} /><Text style={styles.bookingMeta}>{booking.salon?.name ?? "Salon"}</Text></View>
+          <View style={styles.metaRow}><Ionicons name="time-outline" size={13} color={styles.placeholder.color} /><Text style={styles.bookingMeta}>{new Date(booking.scheduledAt).toLocaleString()}</Text></View>
+          <View style={styles.metaRow}><Ionicons name="location-outline" size={13} color={styles.placeholder.color} /><Text style={styles.bookingMeta}>{booking.address}</Text></View>
           {booking.status === "PAYMENT_PENDING" && booking.payment?.status !== "PAID" && <Text style={styles.payHint}>Service finished. Pay online to close this booking.</Text>}
         </View>
         <View style={styles.bookingSide}>
-          <Text style={styles.bookingStatus}>{booking.status}</Text>
+          <Text style={[styles.bookingStatus, statusStyle(booking.status, styles)]}>{statusLabel(booking.status)}</Text>
           <Text style={styles.bookingAmount}>INR {booking.totalAmount}</Text>
           {booking.payment?.status === "PAID" && <Text style={styles.paid}>{booking.payment.method ?? "PAID"}</Text>}
         </View>
@@ -388,6 +397,27 @@ function BookingCard({
   );
 }
 
+function BookingMetric({ icon, label, value, styles }: { icon: React.ComponentProps<typeof Ionicons>["name"]; label: string; value: string; styles: ReturnType<typeof createStyles> }) {
+  return <View style={styles.metricCard}><Ionicons name={icon} size={18} color={styles.placeholder.color} /><Text style={styles.metricValue}>{value}</Text><Text style={styles.metricLabel}>{label}</Text></View>;
+}
+
+function SectionTitle({ title, count, styles }: { title: string; count: number; styles: ReturnType<typeof createStyles> }) {
+  return <View style={styles.sectionRow}><Text style={styles.section}>{title.toUpperCase()}</Text><Text style={styles.countBadge}>{count}</Text></View>;
+}
+
+function statusLabel(status: string) {
+  if (status === "PAYMENT_PENDING") return "PAY NOW";
+  return status;
+}
+
+function statusStyle(status: string, styles: ReturnType<typeof createStyles>) {
+  if (status === "ACCEPTED") return styles.statusAccepted;
+  if (status === "PAYMENT_PENDING") return styles.statusPay;
+  if (status === "COMPLETED") return styles.statusDone;
+  if (["CANCELLED", "REJECTED"].includes(status)) return styles.statusBad;
+  return styles.statusPending;
+}
+
 function serviceNames(booking: Booking) {
   return booking.services?.length ? booking.services.map((item) => item.service.name).join(", ") : booking.service?.name ?? "Salon service";
 }
@@ -400,31 +430,43 @@ function createStyles(colors: ThemeColors) {
     notice: { color: colors.green, fontSize: 11, marginBottom: 8 },
     error: { color: colors.danger, fontSize: 11, marginBottom: 8 },
     empty: { color: colors.muted, fontSize: 12, paddingVertical: 8 },
-    bookingCard: { padding: 14, marginBottom: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    summaryGrid: { flexDirection: "row", gap: 8, marginBottom: 12 },
+    metricCard: { flex: 1, minHeight: 82, alignItems: "flex-start", justifyContent: "center", padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panelRaised },
+    metricValue: { color: colors.text, fontSize: 20, fontWeight: "900", marginTop: 7 },
+    metricLabel: { color: colors.muted, fontSize: 9, fontWeight: "900", marginTop: 4 },
+    sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 22, marginBottom: 10 },
+    countBadge: { minWidth: 28, textAlign: "center", color: colors.cyan, fontSize: 11, fontWeight: "900", paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: colors.cyan, borderRadius: 999 },
+    bookingCard: { padding: 14, marginBottom: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
     bookingTop: { flexDirection: "row", justifyContent: "space-between", gap: 10 },
     bookingCopy: { flex: 1 },
-    bookingTitle: { color: colors.text, fontSize: 14, fontWeight: "800" },
-    bookingMeta: { color: colors.muted, fontSize: 10, marginTop: 6 },
+    bookingTitle: { color: colors.text, fontSize: 15, fontWeight: "900", marginBottom: 6 },
+    metaRow: { flexDirection: "row", alignItems: "flex-start", gap: 6, marginTop: 5 },
+    bookingMeta: { flex: 1, color: colors.muted, fontSize: 10, lineHeight: 15 },
     bookingSide: { alignItems: "flex-end" },
-    bookingStatus: { color: colors.amber, fontSize: 9, fontWeight: "900" },
+    bookingStatus: { overflow: "hidden", color: colors.amber, fontSize: 9, fontWeight: "900", paddingHorizontal: 8, paddingVertical: 5, borderRadius: 999 },
+    statusPending: { color: colors.amber, backgroundColor: colors.warningPanel },
+    statusAccepted: { color: colors.cyan, backgroundColor: colors.activePanel },
+    statusPay: { color: colors.buttonText, backgroundColor: colors.cyan },
+    statusDone: { color: colors.green, backgroundColor: colors.successPanel },
+    statusBad: { color: colors.danger, backgroundColor: colors.dangerPanel },
     bookingAmount: { color: colors.cyan, fontSize: 11, fontWeight: "800", marginTop: 8 },
     paid: { color: colors.green, fontSize: 9, fontWeight: "900", marginTop: 8 },
     payHint: { color: colors.green, fontSize: 10, fontWeight: "800", marginTop: 8 },
     bookingActions: { flexDirection: "row", gap: 10, marginTop: 12 },
-    bookingAction: { flex: 1, alignItems: "center", padding: 10, borderWidth: 1, borderColor: colors.border },
+    bookingAction: { flex: 1, alignItems: "center", padding: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
     link: { color: colors.cyan, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
     deleteLink: { color: colors.danger, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
-    reschedulePanel: { marginTop: 12, padding: 12, borderWidth: 1, borderColor: colors.heroBorder, backgroundColor: colors.panelRaised },
-    reschedulePicker: { padding: 12, marginBottom: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    reschedulePanel: { marginTop: 12, padding: 12, borderWidth: 1, borderColor: colors.heroBorder, borderRadius: 8, backgroundColor: colors.panelRaised },
+    reschedulePicker: { padding: 12, marginBottom: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
     label: { color: colors.muted, fontSize: 9, fontWeight: "800", letterSpacing: 1, marginBottom: 7 },
     value: { color: colors.text, fontSize: 13, fontWeight: "700" },
-    primary: { alignItems: "center", justifyContent: "center", minHeight: 44, marginTop: 2, padding: 12, backgroundColor: colors.cyan },
+    primary: { alignItems: "center", justifyContent: "center", minHeight: 44, marginTop: 2, padding: 12, borderRadius: 8, backgroundColor: colors.cyan },
     primaryText: { color: colors.buttonText, fontWeight: "900", fontSize: 10, letterSpacing: 1.2 },
-    payButton: { alignItems: "center", justifyContent: "center", minHeight: 44, marginTop: 12, padding: 12, backgroundColor: colors.cyan },
-    invoiceButton: { alignItems: "center", justifyContent: "center", minHeight: 42, marginTop: 12, padding: 12, borderWidth: 1, borderColor: colors.cyan },
-    paymentCard: { flexDirection: "row", justifyContent: "space-between", gap: 10, padding: 14, marginBottom: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    payButton: { alignItems: "center", justifyContent: "center", minHeight: 44, marginTop: 12, padding: 12, borderRadius: 8, backgroundColor: colors.cyan },
+    invoiceButton: { alignItems: "center", justifyContent: "center", minHeight: 42, marginTop: 12, padding: 12, borderWidth: 1, borderColor: colors.cyan, borderRadius: 8 },
+    paymentCard: { flexDirection: "row", justifyContent: "space-between", gap: 10, padding: 14, marginBottom: 9, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
     reviewDone: { color: colors.amber, fontSize: 11, fontWeight: "900", marginTop: 12 },
-    reviewPanel: { marginTop: 12, padding: 12, borderWidth: 1, borderColor: colors.heroBorder, backgroundColor: colors.panelRaised },
+    reviewPanel: { marginTop: 12, padding: 12, borderWidth: 1, borderColor: colors.heroBorder, borderRadius: 8, backgroundColor: colors.panelRaised },
     starRow: { flexDirection: "row", gap: 6, marginBottom: 10 },
     starButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
     starActive: { color: colors.amber, fontSize: 20, fontWeight: "900" },
