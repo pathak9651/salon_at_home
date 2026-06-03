@@ -61,11 +61,18 @@ enum NotificationType {
   CASH_COLLECTED
 }
 
+enum SupportTicketStatus {
+  PENDING
+  ACCEPTED
+  CLOSED
+}
+
 model User {
   id        String    @id @default(uuid())
   name      String?
   phone     String    @unique
   email     String?   @unique
+  referralCode String? @unique
   password  String?
   profilePhotoUrl String?
   sessionVersion Int      @default(0)
@@ -84,6 +91,10 @@ model User {
   reviews   Review[]
   addresses UserAddress[]
   notifications Notification[]
+  supportTickets SupportTicket[] @relation("SupportClient")
+  assignedSupportTickets SupportTicket[] @relation("SupportAdmin")
+  supportMessages SupportMessage[]
+  memberships UserMembership[]
 }
 
 model UserAddress {
@@ -285,6 +296,69 @@ model AuditLog {
   @@index([actorId, createdAt])
   @@index([entity, entityId])
   @@index([action, createdAt])
+}
+
+model SupportTicket {
+  id          String              @id @default(uuid())
+  subject     String
+  status      SupportTicketStatus @default(PENDING)
+  clientId    String
+  client      User                @relation("SupportClient", fields: [clientId], references: [id])
+  adminId     String?
+  admin       User?               @relation("SupportAdmin", fields: [adminId], references: [id])
+  messages    SupportMessage[]
+  acceptedAt  DateTime?
+  closedAt    DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([clientId, createdAt])
+  @@index([adminId, createdAt])
+  @@index([status, createdAt])
+}
+
+model SupportMessage {
+  id        String        @id @default(uuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User          @relation(fields: [senderId], references: [id])
+  body      String
+  createdAt DateTime      @default(now())
+
+  @@index([ticketId, createdAt])
+  @@index([senderId, createdAt])
+}
+
+model MembershipPlan {
+  id               String   @id @default(uuid())
+  code             String   @unique
+  name             String
+  monthlyPrice     Int
+  servicesPerMonth Int
+  description      String
+  benefits         String[]
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  memberships      UserMembership[]
+}
+
+model UserMembership {
+  id                String         @id @default(uuid())
+  userId            String
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId            String
+  plan              MembershipPlan @relation(fields: [planId], references: [id])
+  startedAt         DateTime       @default(now())
+  expiresAt         DateTime
+  remainingServices Int
+  isActive          Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([userId, isActive])
+  @@index([expiresAt])
 }
 
 model IpBlock {

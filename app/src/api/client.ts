@@ -20,6 +20,7 @@ function getApiUrl() {
 
 export const API_URL = getApiUrl();
 export const API_ORIGIN = API_URL.replace(/\/api\/?$/, "");
+export const WS_ORIGIN = API_ORIGIN.replace(/^http/i, "ws");
 
 type ValidationDetails = {
   formErrors?: string[];

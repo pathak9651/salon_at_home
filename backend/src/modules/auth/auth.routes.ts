@@ -18,6 +18,7 @@ import {
   recordLoginFailure,
 } from "../../services/brute-force.service";
 import { sendAuthCode } from "../../services/mail.service";
+import { ensureReferralCode, generateUniqueReferralCode } from "../../services/referral.service";
 import { asyncHandler } from "../../utils/async-handler";
 import { HttpError } from "../../utils/http-error";
 
@@ -67,11 +68,13 @@ router.post("/signup", asyncHandler(async (req, res) => {
   if (existingUser) throw new HttpError(409, "An account with this email or phone already exists");
 
   const code = createCode();
+  const referralCode = await generateUniqueReferralCode(data.name, data.phone);
   await prisma.user.create({
     data: {
       name: data.name,
       email: data.email,
       phone: data.phone,
+      referralCode,
       password: await bcrypt.hash(data.password, 12),
       role: data.accountType === "MERCHANT" ? UserRole.OWNER : UserRole.CLIENT,
       verificationCodeHash: await hashCode(code),
@@ -101,6 +104,7 @@ router.post("/verify-account", asyncHandler(async (req, res) => {
     where: { id: user.id },
     data: { emailVerified: true, verificationCodeHash: null, verificationExpiresAt: null },
   });
+  await ensureReferralCode(verifiedUser);
   await clearCodeFailures(attemptKey);
   res.json({ token: createToken(verifiedUser), user: publicUser(verifiedUser) });
 }));
@@ -135,6 +139,7 @@ router.post("/login", asyncHandler(async (req, res) => {
   if (!user.emailVerified && user.role !== UserRole.ADMIN) {
     return res.status(403).json({ error: "Verify your email before logging in", action: "VERIFY_ACCOUNT", email: user.email });
   }
+  await ensureReferralCode(user);
   await clearLoginFailures(attemptKey);
   res.json({ token: createToken(user), user: publicUser(user) });
 }));
@@ -178,6 +183,7 @@ router.post("/logout", requireAuth, asyncHandler(async (req, res) => {
 router.get("/me", requireAuth, asyncHandler(async (req, res) => {
   const user = await prisma.user.findFirst({ where: { id: req.user!.id, deletedAt: null } });
   if (!user) throw new HttpError(404, "User not found");
+  await ensureReferralCode(user);
   res.json(publicUser(user));
 }));
 

@@ -1,10 +1,11 @@
-import { ReactNode, useEffect, useRef, useState } from "react";
+import { ReactNode, RefObject, useEffect, useRef, useState } from "react";
 import { Dimensions, Keyboard, KeyboardAvoidingView, KeyboardEvent, Platform, ScrollView, ScrollViewProps, StyleProp, StyleSheet, TextInput, ViewStyle } from "react-native";
 
 type KeyboardAwareScreenProps = {
   children: ReactNode;
   contentContainerStyle?: StyleProp<ViewStyle>;
   keyboardVerticalOffset?: number;
+  scrollRef?: RefObject<ScrollView | null>;
   showsVerticalScrollIndicator?: boolean;
 } & Pick<ScrollViewProps, "refreshControl">;
 
@@ -12,10 +13,12 @@ export function KeyboardAwareScreen({
   children,
   contentContainerStyle,
   keyboardVerticalOffset = 0,
+  scrollRef: externalScrollRef,
   showsVerticalScrollIndicator = false,
   refreshControl,
 }: KeyboardAwareScreenProps) {
-  const scrollRef = useRef<ScrollView>(null);
+  const internalScrollRef = useRef<ScrollView>(null);
+  const scrollRef = externalScrollRef ?? internalScrollRef;
   const scrollY = useRef(0);
   const keyboardHeight = useRef(0);
   const [extraPadding, setExtraPadding] = useState(180);

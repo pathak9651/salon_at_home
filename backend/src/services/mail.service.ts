@@ -108,3 +108,53 @@ export async function sendPaymentInvoiceEmail(invoice: InvoiceEmailData) {
   });
   return true;
 }
+
+type SafetyIssueEmailData = {
+  reporterName?: string | null;
+  reporterEmail?: string | null;
+  reporterPhone: string;
+  reporterRole: string;
+  message: string;
+};
+
+export async function sendSafetyIssueEmail(report: SafetyIssueEmailData) {
+  if (!transporter) throw new HttpError(503, "SMTP is not configured");
+
+  const subject = "Salon At Home safety issue reported";
+  const text = [
+    "A safety issue was reported from Salon At Home.",
+    "",
+    `Reporter: ${report.reporterName ?? "N/A"}`,
+    `Phone: ${report.reporterPhone}`,
+    `Email: ${report.reporterEmail ?? "N/A"}`,
+    `Role: ${report.reporterRole}`,
+    "",
+    "Issue:",
+    report.message,
+  ].join("\n");
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5">
+      <h2 style="margin:0 0 12px">Safety issue reported</h2>
+      <table style="border-collapse:collapse;width:100%;max-width:620px">
+        <tbody>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb">Reporter</td><td style="padding:8px;border:1px solid #e5e7eb">${escapeHtml(report.reporterName ?? "N/A")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb">Phone</td><td style="padding:8px;border:1px solid #e5e7eb">${escapeHtml(report.reporterPhone)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb">Email</td><td style="padding:8px;border:1px solid #e5e7eb">${escapeHtml(report.reporterEmail ?? "N/A")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb">Role</td><td style="padding:8px;border:1px solid #e5e7eb">${escapeHtml(report.reporterRole)}</td></tr>
+        </tbody>
+      </table>
+      <p style="margin:16px 0 6px"><strong>Issue</strong></p>
+      <p style="white-space:pre-wrap;padding:12px;border:1px solid #e5e7eb">${escapeHtml(report.message)}</p>
+    </div>
+  `;
+
+  await transporter.sendMail({
+    from: env.SMTP_FROM,
+    to: "pathakayush8194@gmail.com",
+    subject,
+    text,
+    html,
+  });
+  return true;
+}

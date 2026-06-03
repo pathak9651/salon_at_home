@@ -10,6 +10,7 @@ import paymentRoutes, { razorpayWebhookHandler } from "./modules/payments/paymen
 import profileRoutes from "./modules/profile/profile.routes";
 import reviewRoutes from "./modules/reviews/review.routes";
 import salonRoutes from "./modules/salons/salon.routes";
+import supportRoutes from "./modules/support/support.routes";
 import { errorHandler } from "./middleware/error.middleware";
 import { authIpAbuseLimiter, bookingLimiter, burstLimiter, globalLimiter, ipBlocker, paymentLimiter, uploadLimiter } from "./middleware/rate-limit.middleware";
 import { rejectUnsupportedContentType, requestTimeout } from "./middleware/request-guard.middleware";
@@ -46,5 +47,6 @@ app.use("/api/employees", employeeRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/payments", paymentLimiter, paymentRoutes);
 app.use("/api/reviews", reviewRoutes);
+app.use("/api/support", supportRoutes);
 app.use("/api/admin", adminRoutes);
 app.use(errorHandler);

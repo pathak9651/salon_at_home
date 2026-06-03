@@ -18,7 +18,7 @@ import { ProfileScreen } from "./screens/profile/ProfileScreen";
 import { palettes, ThemeMode, ThemeProvider, useTheme } from "./utils/theme";
 
 export type UserRole = "CLIENT" | "OWNER" | "ADMIN";
-export type SessionUser = { id: string; name?: string | null; email?: string | null; phone: string; role: UserRole; profilePhotoUrl?: string | null };
+export type SessionUser = { id: string; name?: string | null; email?: string | null; phone: string; role: UserRole; profilePhotoUrl?: string | null; referralCode?: string | null };
 export type AuthSession = { token: string; user: SessionUser };
 
 const TOKEN_KEY = "salon_at_home_token";
