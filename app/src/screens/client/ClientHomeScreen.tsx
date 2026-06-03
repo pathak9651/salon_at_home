@@ -497,6 +497,24 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
         </View>
       </View>
 
+      <View style={styles.clientHeroCard}>
+        <View style={styles.clientHeroCopy}>
+          <Text style={styles.clientHeroKicker}>HELLO CLIENT</Text>
+          <Text style={styles.clientHeroTitle}>BarberX welcomes you</Text>
+          <Text style={styles.clientHeroText}>Find trusted salon experts, choose a saved address, and book your at-home grooming slot in minutes.</Text>
+        </View>
+        <View style={styles.clientHeroArt}>
+          <View style={styles.clientPhone}>
+            <View style={styles.clientPhoneTop} />
+            <Ionicons name="home-outline" size={28} color={colors.cyan} />
+            <View style={styles.clientPhoneLine} />
+            <View style={styles.clientPhoneLineShort} />
+          </View>
+          <View style={styles.clientHeroBadge}><Ionicons name="cut" size={24} color={colors.buttonText} /></View>
+          <View style={styles.clientHeroPin}><Ionicons name="location" size={18} color={colors.green} /></View>
+        </View>
+      </View>
+
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.adRail}>
         {promoBanners.map((promo, index) => (
           <TouchableOpacity
@@ -740,6 +758,18 @@ function createStyles(colors: ThemeColors) {
     genderIdle: { flex: 1, height: "100%", alignItems: "center", justifyContent: "center" },
     genderActiveText: { color: colors.buttonText, fontSize: 18, fontWeight: "900" },
     genderIdleText: { color: colors.cyan, fontSize: 18, fontWeight: "900" },
+    clientHeroCard: { minHeight: 178, flexDirection: "row", alignItems: "center", gap: 12, padding: 16, marginBottom: 12, overflow: "hidden", borderWidth: 1, borderColor: colors.heroBorder, borderRadius: 8, backgroundColor: colors.panelRaised },
+    clientHeroCopy: { flex: 1.18 },
+    clientHeroKicker: { color: colors.amber, fontSize: 9, fontWeight: "900", letterSpacing: 1.4 },
+    clientHeroTitle: { color: colors.text, fontSize: 25, fontWeight: "900", lineHeight: 31, marginTop: 8 },
+    clientHeroText: { color: colors.muted, fontSize: 11, fontWeight: "700", lineHeight: 17, marginTop: 9 },
+    clientHeroArt: { width: 126, height: 132, justifyContent: "center", alignItems: "center" },
+    clientPhone: { width: 86, height: 106, alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
+    clientPhoneTop: { position: "absolute", top: 8, width: 34, height: 5, borderRadius: 999, backgroundColor: colors.border },
+    clientPhoneLine: { width: 48, height: 7, borderRadius: 999, backgroundColor: colors.activePanel },
+    clientPhoneLineShort: { width: 32, height: 7, borderRadius: 999, backgroundColor: colors.border },
+    clientHeroBadge: { position: "absolute", right: 2, top: 7, width: 48, height: 48, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: colors.panelRaised, borderRadius: 24, backgroundColor: colors.cyan },
+    clientHeroPin: { position: "absolute", left: 2, bottom: 7, width: 38, height: 38, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.heroBorder, borderRadius: 8, backgroundColor: colors.panel },
     popupOverlay: { flex: 1, justifyContent: "center", padding: 22, backgroundColor: "rgba(0,0,0,0.58)" },
     popupBanner: { padding: 20, borderWidth: 1, borderColor: colors.heroBorder, borderRadius: 8, backgroundColor: colors.panelRaised },
     popupClose: { position: "absolute", top: 12, right: 12, zIndex: 2, width: 34, height: 34, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
