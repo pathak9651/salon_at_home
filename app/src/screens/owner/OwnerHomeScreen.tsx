@@ -39,6 +39,7 @@ type Employee = {
   salonId: string;
 };
 type AnalyticsRange = "DAY" | "WEEK" | "MONTH" | "YEAR";
+type BookingSection = "requests" | "scheduled" | "payment" | "history" | null;
 type TrendPoint = { label: string; requests: number; completed: number; income: number };
 
 const analyticsRanges: AnalyticsRange[] = ["DAY", "WEEK", "MONTH", "YEAR"];
@@ -63,6 +64,7 @@ export function OwnerHomeScreen({ token }: { token: string }) {
   const [cashBookingId, setCashBookingId] = useState<string | null>(null);
   const [cashRemark, setCashRemark] = useState("");
   const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRange>("WEEK");
+  const [activeBookingSection, setActiveBookingSection] = useState<BookingSection>(null);
 
   useEffect(() => {
     void loadBookings();
@@ -316,9 +318,18 @@ export function OwnerHomeScreen({ token }: { token: string }) {
       {!!notice && <Text style={styles.notice}>{notice}</Text>}
       {!!error && <Text style={styles.error}>{error}</Text>}
 
-      <Text style={styles.section}>NEW REQUESTS</Text>
-      {!requestBookings.length && <Text style={styles.empty}>No new booking requests.</Text>}
-      {requestBookings.map((booking) => (
+      <Text style={styles.section}>BOOKING CONTROLS</Text>
+      <View style={styles.quickGrid}>
+        <OwnerQuickTile icon="notifications-outline" title="New requests" count={requestBookings.length} active={activeBookingSection === "requests"} onPress={() => setActiveBookingSection((current) => current === "requests" ? null : "requests")} styles={styles} colors={colors} />
+        <OwnerQuickTile icon="calendar-outline" title="Scheduled bookings" count={scheduledBookings.length} active={activeBookingSection === "scheduled"} onPress={() => setActiveBookingSection((current) => current === "scheduled" ? null : "scheduled")} styles={styles} colors={colors} />
+        <OwnerQuickTile icon="card-outline" title="Waiting payment" count={paymentPendingBookings.length} active={activeBookingSection === "payment"} onPress={() => setActiveBookingSection((current) => current === "payment" ? null : "payment")} styles={styles} colors={colors} />
+        <OwnerQuickTile icon="archive-outline" title="Closed history" count={historyBookings.length} active={activeBookingSection === "history"} onPress={() => setActiveBookingSection((current) => current === "history" ? null : "history")} styles={styles} colors={colors} />
+      </View>
+
+      {activeBookingSection === "requests" && <>
+        <Text style={styles.section}>NEW REQUESTS</Text>
+        {!requestBookings.length && <Text style={styles.empty}>No new booking requests.</Text>}
+        {requestBookings.map((booking) => (
         <View style={styles.card} key={booking.id}>
           <View style={styles.top}>
             <View style={styles.copy}>
@@ -376,11 +387,13 @@ export function OwnerHomeScreen({ token }: { token: string }) {
             <TouchableOpacity disabled={saving} onPress={() => void submitReschedule()} style={styles.primary}><Text style={styles.primaryText}>SEND NEW TIME</Text></TouchableOpacity>
           </View>}
         </View>
-      ))}
+        ))}
+      </>}
 
-      <Text style={styles.section}>SCHEDULED BOOKINGS</Text>
-      {!scheduledBookings.length && <Text style={styles.empty}>No scheduled bookings.</Text>}
-      {scheduledBookings.map((booking) => (
+      {activeBookingSection === "scheduled" && <>
+        <Text style={styles.section}>SCHEDULED BOOKINGS</Text>
+        {!scheduledBookings.length && <Text style={styles.empty}>No scheduled bookings.</Text>}
+        {scheduledBookings.map((booking) => (
         <View style={styles.card} key={booking.id}>
           <View style={styles.top}>
             <View style={styles.copy}>
@@ -435,11 +448,13 @@ export function OwnerHomeScreen({ token }: { token: string }) {
             <TouchableOpacity disabled={saving} onPress={() => void submitReschedule()} style={styles.primary}><Text style={styles.primaryText}>SEND NEW TIME</Text></TouchableOpacity>
           </View>}
         </View>
-      ))}
+        ))}
+      </>}
 
-      <Text style={styles.section}>WAITING FOR ONLINE PAYMENT</Text>
-      {!paymentPendingBookings.length && <Text style={styles.empty}>No online payment requests waiting.</Text>}
-      {paymentPendingBookings.map((booking) => (
+      {activeBookingSection === "payment" && <>
+        <Text style={styles.section}>WAITING FOR ONLINE PAYMENT</Text>
+        {!paymentPendingBookings.length && <Text style={styles.empty}>No online payment requests waiting.</Text>}
+        {paymentPendingBookings.map((booking) => (
         <View style={styles.card} key={booking.id}>
           <View style={styles.top}>
             <View style={styles.copy}>
@@ -464,11 +479,13 @@ export function OwnerHomeScreen({ token }: { token: string }) {
             <TouchableOpacity disabled={saving} onPress={() => void closeWithCash(booking.id)} style={styles.primary}><Text style={styles.primaryText}>CLOSE AS CASH COLLECTED</Text></TouchableOpacity>
           </View>}
         </View>
-      ))}
+        ))}
+      </>}
 
-      <Text style={styles.section}>CLOSED / HISTORY</Text>
-      {!historyBookings.length && <Text style={styles.empty}>No closed bookings yet.</Text>}
-      {historyBookings.map((booking) => (
+      {activeBookingSection === "history" && <>
+        <Text style={styles.section}>CLOSED / HISTORY</Text>
+        {!historyBookings.length && <Text style={styles.empty}>No closed bookings yet.</Text>}
+        {historyBookings.map((booking) => (
         <View style={styles.card} key={booking.id}>
           <View style={styles.top}>
             <View style={styles.copy}>
@@ -485,7 +502,8 @@ export function OwnerHomeScreen({ token }: { token: string }) {
             </View>
           </View>
         </View>
-      ))}
+        ))}
+      </>}
 
       {showDatePicker && <DateTimePicker value={dateValue ?? new Date()} mode="date" minimumDate={new Date()} display="default" onChange={updateDate} />}
       {showTimePicker && <DateTimePicker value={timeValue ?? new Date()} mode="time" display="default" onChange={updateTime} />}
@@ -503,6 +521,35 @@ function Metric({ label, value, styles }: { label: string; value: string; styles
 
 function AnalyticsCard({ label, value, styles }: { label: string; value: string | number; styles: ReturnType<typeof createStyles> }) {
   return <View style={styles.analyticsCard}><Text style={styles.analyticsValue}>{value}</Text><Text style={styles.analyticsLabel}>{label}</Text></View>;
+}
+
+function OwnerQuickTile({
+  icon,
+  title,
+  count,
+  active,
+  onPress,
+  styles,
+  colors,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  title: string;
+  count: number;
+  active: boolean;
+  onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
+  colors: ThemeColors;
+}) {
+  return (
+    <TouchableOpacity accessibilityRole="button" onPress={onPress} style={[styles.quickTile, active && styles.quickTileActive]}>
+      <View style={styles.quickTop}>
+        <Ionicons name={icon} size={27} color={active ? colors.cyan : colors.text} />
+        <Text style={styles.quickCount}>{count}</Text>
+      </View>
+      <Text style={styles.quickTitle}>{title}</Text>
+      <Ionicons name={active ? "chevron-up" : "chevron-down"} size={18} color={colors.muted} />
+    </TouchableOpacity>
+  );
 }
 
 function MiniStat({ label, value, styles }: { label: string; value: string | number; styles: ReturnType<typeof createStyles> }) {
@@ -688,6 +735,12 @@ function createStyles(colors: ThemeColors) {
     miniStat: { flex: 1, minHeight: 58, justifyContent: "center", padding: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
     miniValue: { color: colors.text, fontSize: 13, fontWeight: "900" },
     miniLabel: { color: colors.muted, fontSize: 9, fontWeight: "800", marginTop: 6 },
+    quickGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+    quickTile: { flexGrow: 1, flexBasis: "47%", minHeight: 116, justifyContent: "space-between", padding: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panelRaised },
+    quickTileActive: { borderColor: colors.cyan, backgroundColor: colors.activePanel },
+    quickTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    quickCount: { color: colors.cyan, fontSize: 17, fontWeight: "900" },
+    quickTitle: { color: colors.text, fontSize: 15, fontWeight: "900", lineHeight: 20 },
     chartBlock: { marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border },
     chartTitle: { color: colors.text, fontSize: 12, fontWeight: "900", letterSpacing: 0.8 },
     barChart: { minHeight: 134, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 7, marginTop: 12 },
