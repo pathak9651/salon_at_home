@@ -2,7 +2,7 @@ import * as Location from "expo-location";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Image, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Image, Linking, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { apiAssetUrl, apiRequest } from "../../api/client";
 import { ThemeColors, useTheme } from "../../utils/theme";
 import { KeyboardAwareScreen } from "../common/KeyboardAwareScreen";
@@ -13,6 +13,19 @@ type GenderPreference = "M" | "F";
 type Service = { id: string; name: string; description?: string | null; price: number; durationMin: number };
 type SalonImage = { id: string; url: string; caption?: string | null };
 type Review = { id: string; rating: number; comment?: string | null; createdAt: string; client?: { name?: string | null } };
+type SavedAddress = {
+  id: string;
+  label: string;
+  line1: string;
+  line2?: string | null;
+  city: string;
+  state: string;
+  pincode: string;
+  isDefault: boolean;
+};
+type ProfileAddressResponse = {
+  addresses: SavedAddress[];
+};
 type Salon = {
   id: string;
   name: string;
@@ -39,6 +52,14 @@ type BookingConfirmation = {
   totalAmount: number;
   status: string;
 };
+type PromoBanner = {
+  id: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  eyebrow: string;
+  title: string;
+  text: string;
+  action: string;
+};
 
 const serviceFilters = ["Haircut", "Hair spa", "Skin care", "Grooming"];
 const ratingFilters = [0, 3, 4, 4.5];
@@ -46,6 +67,11 @@ const distanceFilters = [5, 10, 25, 50];
 const priceFilters = [0, 500, 1000, 2000];
 const menKeywords = ["men", "male", "boy", "gents", "gentleman", "beard", "shave", "trim", "grooming", "haircut"];
 const womenKeywords = ["women", "female", "girl", "ladies", "bridal", "makeup", "facial", "wax", "threading", "manicure", "pedicure", "spa", "skin"];
+const promoBanners: PromoBanner[] = [
+  { id: "first-booking", icon: "sparkles-outline", eyebrow: "WELCOME OFFER", title: "Flat 20% off your first home service", text: "Book a verified salon expert near you and save on your first appointment.", action: "BOOK NOW" },
+  { id: "membership", icon: "ribbon-outline", eyebrow: "MONTHLY CARE", title: "Salon membership packages are live", text: "Pick monthly service bundles from your profile and keep grooming predictable.", action: "VIEW DEALS" },
+  { id: "weekend", icon: "flash-outline", eyebrow: "FAST SLOT", title: "Weekend grooming slots filling quickly", text: "Choose the next slot, saved address, and confirm your booking in seconds.", action: "FIND SALONS" },
+];
 
 export function ClientHomeScreen({ token, onBookingCompleted }: { token: string; onBookingCompleted: () => void }) {
   const { colors } = useTheme();
@@ -60,6 +86,8 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
   const [bookingDateValue, setBookingDateValue] = useState<Date | null>(null);
   const [bookingTimeValue, setBookingTimeValue] = useState<Date | null>(null);
   const [bookingAddress, setBookingAddress] = useState("");
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState("");
   const [bookingInstructions, setBookingInstructions] = useState("");
   const [bookingConfirmation, setBookingConfirmation] = useState<BookingConfirmation | null>(null);
   const [bookingSuccess, setBookingSuccess] = useState("");
@@ -70,6 +98,8 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
   const [radiusKm, setRadiusKm] = useState(25);
   const [maxPrice, setMaxPrice] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
+  const [showPromoPopup, setShowPromoPopup] = useState(true);
+  const [activePromoIndex, setActivePromoIndex] = useState(0);
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [loadingSalons, setLoadingSalons] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -81,6 +111,7 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
 
   useEffect(() => {
     void loadSalons();
+    void loadSavedAddresses();
   }, []);
 
   const queryString = useMemo(() => {
@@ -140,6 +171,12 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
     setSelectedServiceIds([]);
     setBookingConfirmation(null);
     setBookingSuccess("");
+    setSelectedAddressId("");
+    const defaultAddress = savedAddresses.find((address) => address.isDefault) ?? savedAddresses[0];
+    if (!bookingAddress.trim() && defaultAddress) {
+      setBookingAddress(formatSavedAddress(defaultAddress));
+      setSelectedAddressId(defaultAddress.id);
+    }
     setLoadingDetails(true);
     try {
       setSelectedSalon(await apiRequest<Salon>(`/salons/${salon.id}`));
@@ -205,6 +242,7 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
     setBookingDateValue(null);
     setBookingTimeValue(null);
     setBookingAddress("");
+    setSelectedAddressId("");
     setBookingInstructions("");
     setBookingConfirmation(null);
     setShowDatePicker(false);
@@ -254,6 +292,7 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
         place.postalCode,
       ].filter(Boolean).join(", ");
       setBookingAddress(detectedAddress);
+      setSelectedAddressId("");
       if (!location) {
         setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
         setArea([place.district, place.city, place.region].filter(Boolean).slice(0, 2).join(", ") || "Current location");
@@ -265,12 +304,29 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
     }
   }
 
+  async function loadSavedAddresses() {
+    try {
+      const profile = await apiRequest<ProfileAddressResponse>("/profile", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setSavedAddresses(profile.addresses ?? []);
+    } catch {
+      setSavedAddresses([]);
+    }
+  }
+
+  function useSavedAddress(address: SavedAddress) {
+    setSelectedAddressId(address.id);
+    setBookingAddress(formatSavedAddress(address));
+  }
+
   const activeFilterCount = (radiusKm !== 25 ? 1 : 0) + (minRating ? 1 : 0) + (maxPrice ? 1 : 0) + (service ? 1 : 0);
   const suggestedSalons = sortSalonsForGender(salons, genderPreference);
   const featuredSalon = suggestedSalons[0] ?? salons[0] ?? null;
   const featuredServices = genderFilteredServices(suggestedSalons, genderPreference).slice(0, 8);
   const nearbyDeals = suggestedSalons.slice(0, 6);
   const suggestionLabel = genderPreference === "M" ? "Men's grooming" : "Women's beauty";
+  const activePromo = promoBanners[activePromoIndex] ?? promoBanners[0];
 
   if (selectedSalon) {
     const gallery = [selectedSalon.coverImageUrl, selectedSalon.imageUrl, ...selectedSalon.images.map((image) => image.url)].filter(Boolean) as string[];
@@ -294,8 +350,8 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
           <Text style={styles.reviewScore}>{selectedSalon.rating ? selectedSalon.rating.toFixed(1) : "NEW"}</Text>
           <Text style={styles.reviewMeta}>{selectedSalon.reviewCount ?? 0} review(s)</Text>
         </View>
-        {selectedSalon.reviews?.length ? selectedSalon.reviews.slice(0, 5).map((review) => (
-          <View style={styles.reviewCard} key={review.id}>
+        {selectedSalon.reviews?.length ? selectedSalon.reviews.slice(0, 5).map((review, index) => (
+          <View style={styles.reviewCard} key={`${review.id}-${index}`}>
             <Text style={styles.reviewStars}>{"★".repeat(review.rating)}{"☆".repeat(5 - review.rating)}</Text>
             <Text style={styles.reviewAuthor}>{review.client?.name ?? "Client"} | {new Date(review.createdAt).toLocaleDateString()}</Text>
             {!!review.comment && <Text style={styles.reviewComment}>{review.comment}</Text>}
@@ -314,8 +370,8 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
           </View>
 
           <StepHeader number="1" title="Choose services" done={selectedServiceIds.length > 0} styles={styles} />
-          {selectedSalon.services.length ? selectedSalon.services.map((item) => (
-            <TouchableOpacity onPress={() => toggleService(item.id)} style={[styles.serviceRow, selectedServiceIds.includes(item.id) && styles.serviceSelected]} key={item.id}>
+          {selectedSalon.services.length ? selectedSalon.services.map((item, index) => (
+            <TouchableOpacity onPress={() => toggleService(item.id)} style={[styles.serviceRow, selectedServiceIds.includes(item.id) && styles.serviceSelected]} key={`${item.id}-${index}`}>
               <View style={styles.checkCircle}><Text style={selectedServiceIds.includes(item.id) ? styles.checkActive : styles.checkInactive}>{selectedServiceIds.includes(item.id) ? "✓" : "+"}</Text></View>
               <View style={styles.salonCopy}>
                 <Text style={styles.name}>{item.name}</Text>
@@ -326,7 +382,7 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
             </TouchableOpacity>
           )) : <Text style={styles.empty}>No services listed.</Text>}
           {selectedServices.length ? <View style={styles.selectedStrip}>
-            {selectedServices.map((item) => <View style={styles.selectedPill} key={item.id}><Text style={styles.selectedPillText}>{item.name}</Text></View>)}
+            {selectedServices.map((item, index) => <View style={styles.selectedPill} key={`${item.id}-${index}`}><Text style={styles.selectedPillText}>{item.name}</Text></View>)}
           </View> : null}
 
           <StepHeader number="2" title="Select date and time" done={!!bookingDate && !!bookingTime} styles={styles} />
@@ -350,7 +406,42 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
           <TouchableOpacity accessibilityLabel="Auto detect address" accessibilityRole="button" disabled={bookingAddressLoading} onPress={() => void autofillBookingAddress()} style={styles.quickIconButton}>
             {bookingAddressLoading ? <ActivityIndicator color={colors.cyan} /> : <Ionicons name="locate" size={22} color={colors.cyan} />}
           </TouchableOpacity>
-          <TextInput value={bookingAddress} onChangeText={setBookingAddress} placeholder="Home service address" placeholderTextColor={colors.placeholder} style={[styles.bookingInput, styles.addressInput]} multiline />
+          {savedAddresses.length ? (
+            <View style={styles.savedAddressList}>
+              {savedAddresses.map((address, index) => (
+                <TouchableOpacity
+                  accessibilityLabel={`Use ${address.label} address`}
+                  accessibilityRole="button"
+                  key={`${address.id}-${index}`}
+                  onPress={() => useSavedAddress(address)}
+                  style={[styles.savedAddressRow, selectedAddressId === address.id && styles.savedAddressActive]}
+                >
+                  <View style={[styles.savedAddressIcon, selectedAddressId === address.id && styles.savedAddressIconActive]}>
+                    <Ionicons name={addressIcon(address.label)} size={18} color={selectedAddressId === address.id ? colors.buttonText : colors.cyan} />
+                  </View>
+                  <View style={styles.salonCopy}>
+                    <View style={styles.savedAddressTitleRow}>
+                      <Text style={styles.savedAddressLabel}>{address.label || "Saved address"}</Text>
+                      {address.isDefault && <Text style={styles.defaultBadge}>DEFAULT</Text>}
+                    </View>
+                    <Text style={styles.savedAddressText} numberOfLines={2}>{formatSavedAddress(address)}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+          <TextInput
+            value={bookingAddress}
+            onChangeText={(value) => {
+              setSelectedAddressId("");
+              setBookingAddress(value);
+            }}
+            placeholder="Home service address"
+            placeholderTextColor={colors.placeholder}
+            style={[styles.bookingInput, styles.addressInput]}
+            multiline
+          />
 
           <StepHeader number="4" title="Instructions" done={!!bookingInstructions.trim()} optional styles={styles} />
           <TextInput value={bookingInstructions} onChangeText={setBookingInstructions} placeholder="Booking instructions, access notes, preferences" placeholderTextColor={colors.placeholder} style={[styles.bookingInput, styles.instructionsInput]} multiline />
@@ -379,6 +470,17 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
 
   return (
     <KeyboardAwareScreen contentContainerStyle={styles.page}>
+      <PromoPopup
+        promo={activePromo}
+        visible={showPromoPopup}
+        onClose={() => setShowPromoPopup(false)}
+        onPrimary={() => {
+          setShowPromoPopup(false);
+          if (featuredSalon) void openDetails(featuredSalon);
+        }}
+        styles={styles}
+        colors={colors}
+      />
       <View style={styles.clientTop}>
         <View>
           <View style={styles.locationTitleRow}>
@@ -394,6 +496,28 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
           </View>
         </View>
       </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.adRail}>
+        {promoBanners.map((promo, index) => (
+          <TouchableOpacity
+            accessibilityLabel={`Open ${promo.title} offer`}
+            accessibilityRole="button"
+            key={promo.id}
+            onPress={() => {
+              setActivePromoIndex(index);
+              setShowPromoPopup(true);
+            }}
+            style={styles.adBanner}
+          >
+            <View style={styles.adIcon}><Ionicons name={promo.icon} size={22} color={colors.buttonText} /></View>
+            <View style={styles.salonCopy}>
+              <Text style={styles.adEyebrow}>{promo.eyebrow}</Text>
+              <Text style={styles.adTitle}>{promo.title}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.cyan} />
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
 
       <TouchableOpacity disabled={loadingLocation} onPress={() => void detectLocation()} style={styles.detectStrip}>
         {loadingLocation ? <ActivityIndicator color={colors.buttonText} /> : <>
@@ -483,8 +607,8 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
       </ScrollView>
 
       <Text style={styles.section}>NEARBY SALONS</Text>
-      {suggestedSalons.map((salon) => (
-        <TouchableOpacity onPress={() => void openDetails(salon)} style={styles.salon} key={salon.id}>
+      {suggestedSalons.map((salon, index) => (
+        <TouchableOpacity onPress={() => void openDetails(salon)} style={styles.salon} key={`${salon.id}-${index}`}>
           {salon.coverImageUrl ? <Image source={{ uri: apiAssetUrl(salon.coverImageUrl) }} style={styles.coverThumb} /> : <View style={styles.coverFallback}><Text style={styles.code}>SA</Text></View>}
           <View style={styles.salonCopy}>
             <Text style={styles.name}>{salon.name}</Text>
@@ -501,6 +625,46 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
 
 function FilterRow({ values, active, onPress, styles }: { values: string[]; active: string; onPress: (value: string) => void; styles: ReturnType<typeof createStyles> }) {
   return <ScrollView horizontal showsHorizontalScrollIndicator={false}>{values.map((value, index) => <TouchableOpacity key={`${value}-${index}`} onPress={() => onPress(value)} style={[styles.filter, active === value && styles.filterActive]}><Text style={[styles.filterText, active === value && styles.filterTextActive]}>{value}</Text></TouchableOpacity>)}</ScrollView>;
+}
+
+function PromoPopup({
+  promo,
+  visible,
+  onClose,
+  onPrimary,
+  styles,
+  colors,
+}: {
+  promo: PromoBanner;
+  visible: boolean;
+  onClose: () => void;
+  onPrimary: () => void;
+  styles: ReturnType<typeof createStyles>;
+  colors: ThemeColors;
+}) {
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
+      <View style={styles.popupOverlay}>
+        <View style={styles.popupBanner}>
+          <TouchableOpacity accessibilityLabel="Close offer" accessibilityRole="button" onPress={onClose} style={styles.popupClose}>
+            <Ionicons name="close" size={20} color={colors.text} />
+          </TouchableOpacity>
+          <View style={styles.popupIcon}><Ionicons name={promo.icon} size={32} color={colors.buttonText} /></View>
+          <Text style={styles.popupEyebrow}>{promo.eyebrow}</Text>
+          <Text style={styles.popupTitle}>{promo.title}</Text>
+          <Text style={styles.popupText}>{promo.text}</Text>
+          <View style={styles.popupActions}>
+            <TouchableOpacity accessibilityRole="button" onPress={onClose} style={styles.popupSecondary}>
+              <Text style={styles.secondaryText}>LATER</Text>
+            </TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" onPress={onPrimary} style={styles.popupPrimary}>
+              <Text style={styles.primaryText}>{promo.action}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 }
 
 function StepHeader({ number, title, done, optional = false, styles }: { number: string; title: string; done: boolean; optional?: boolean; styles: ReturnType<typeof createStyles> }) {
@@ -522,6 +686,18 @@ function serviceText(salon: Salon) {
   if (!salon.services.length) return "Services coming soon";
   const cheapest = salon.minServicePrice ?? Math.min(...salon.services.map((item) => item.price));
   return `${salon.services.slice(0, 2).map((item) => item.name).join(", ")} | From INR ${cheapest}`;
+}
+
+function formatSavedAddress(address: SavedAddress) {
+  return [address.line1, address.line2, address.city, address.state, address.pincode].filter(Boolean).join(", ");
+}
+
+function addressIcon(label: string): keyof typeof Ionicons.glyphMap {
+  const normalized = label.toLowerCase();
+  if (normalized.includes("home")) return "home-outline";
+  if (normalized.includes("office") || normalized.includes("work")) return "business-outline";
+  if (normalized.includes("shop") || normalized.includes("salon")) return "storefront-outline";
+  return "location-outline";
 }
 
 function serviceMatchesGender(service: Service, gender: GenderPreference) {
@@ -564,6 +740,21 @@ function createStyles(colors: ThemeColors) {
     genderIdle: { flex: 1, height: "100%", alignItems: "center", justifyContent: "center" },
     genderActiveText: { color: colors.buttonText, fontSize: 18, fontWeight: "900" },
     genderIdleText: { color: colors.cyan, fontSize: 18, fontWeight: "900" },
+    popupOverlay: { flex: 1, justifyContent: "center", padding: 22, backgroundColor: "rgba(0,0,0,0.58)" },
+    popupBanner: { padding: 20, borderWidth: 1, borderColor: colors.heroBorder, borderRadius: 8, backgroundColor: colors.panelRaised },
+    popupClose: { position: "absolute", top: 12, right: 12, zIndex: 2, width: 34, height: 34, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
+    popupIcon: { width: 58, height: 58, alignItems: "center", justifyContent: "center", borderRadius: 8, backgroundColor: colors.cyan },
+    popupEyebrow: { color: colors.amber, fontSize: 10, fontWeight: "900", letterSpacing: 1.2, marginTop: 18 },
+    popupTitle: { color: colors.text, fontSize: 25, fontWeight: "900", lineHeight: 31, marginTop: 8, paddingRight: 28 },
+    popupText: { color: colors.muted, fontSize: 13, fontWeight: "700", lineHeight: 20, marginTop: 10 },
+    popupActions: { flexDirection: "row", gap: 10, marginTop: 18 },
+    popupPrimary: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 44, paddingHorizontal: 12, borderRadius: 8, backgroundColor: colors.cyan },
+    popupSecondary: { width: 92, alignItems: "center", justifyContent: "center", minHeight: 44, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.cyan, borderRadius: 8 },
+    adRail: { gap: 10, paddingBottom: 10 },
+    adBanner: { width: 286, minHeight: 76, flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderWidth: 1, borderColor: colors.heroBorder, borderRadius: 8, backgroundColor: colors.panelRaised },
+    adIcon: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: 8, backgroundColor: colors.cyan },
+    adEyebrow: { color: colors.amber, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
+    adTitle: { color: colors.text, fontSize: 13, fontWeight: "900", lineHeight: 17, marginTop: 4 },
     detectStrip: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 38, marginBottom: 12, borderRadius: 8, backgroundColor: colors.cyan },
     heroBanner: { minHeight: 190, flexDirection: "row", overflow: "hidden", borderRadius: 8, borderWidth: 1, borderColor: colors.heroBorder, backgroundColor: colors.panelRaised },
     heroCopy: { flex: 1.12, justifyContent: "center", padding: 22 },
@@ -597,53 +788,53 @@ function createStyles(colors: ThemeColors) {
     dealTitle: { color: colors.text, fontSize: 15, fontWeight: "900", marginTop: 10 },
     dealMeta: { color: colors.amber, fontSize: 10, fontWeight: "800", marginTop: 6 },
     dealPrice: { color: colors.muted, fontSize: 11, lineHeight: 16, marginTop: 6 },
-    location: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, padding: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    location: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
     online: { color: colors.green, fontSize: 9, fontWeight: "800", letterSpacing: 1 },
     locationText: { color: colors.text, fontSize: 12, marginTop: 5 },
-    detectButton: { minWidth: 76, alignItems: "center", justifyContent: "center", padding: 10, backgroundColor: colors.cyan },
+    detectButton: { minWidth: 76, alignItems: "center", justifyContent: "center", padding: 10, borderRadius: 8, backgroundColor: colors.cyan },
     detectText: { color: colors.buttonText, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
-    searchInput: { color: colors.text, padding: 13, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, fontSize: 13, marginTop: 12 },
+    searchInput: { color: colors.text, padding: 13, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel, fontSize: 13, marginTop: 12 },
     actions: { flexDirection: "row", gap: 10, marginTop: 10 },
-    primary: { alignItems: "center", justifyContent: "center", minHeight: 42, paddingHorizontal: 14, backgroundColor: colors.cyan },
+    primary: { alignItems: "center", justifyContent: "center", minHeight: 42, paddingHorizontal: 14, borderRadius: 8, backgroundColor: colors.cyan },
     primaryText: { color: colors.buttonText, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
-    secondary: { alignItems: "center", justifyContent: "center", minHeight: 42, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.cyan },
+    secondary: { alignItems: "center", justifyContent: "center", minHeight: 42, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.cyan, borderRadius: 8 },
     secondaryText: { color: colors.cyan, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
     section: { color: colors.text, fontWeight: "700", fontSize: 12, letterSpacing: 1.5, marginTop: 22, marginBottom: 10 },
-    filterPanel: { padding: 12, marginTop: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    filterPanel: { padding: 12, marginTop: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
     filterSection: { color: colors.text, fontWeight: "800", fontSize: 10, letterSpacing: 1.2, marginTop: 12, marginBottom: 8 },
-    filter: { paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, marginRight: 8 },
+    filter: { paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel, marginRight: 8 },
     filterActive: { borderColor: colors.cyan, backgroundColor: colors.activePanel },
     filterText: { color: colors.muted, fontSize: 10, fontWeight: "800" },
     filterTextActive: { color: colors.cyan },
-    applyFilters: { alignItems: "center", justifyContent: "center", minHeight: 42, paddingHorizontal: 14, backgroundColor: colors.cyan, marginTop: 14 },
+    applyFilters: { alignItems: "center", justifyContent: "center", minHeight: 42, paddingHorizontal: 14, borderRadius: 8, backgroundColor: colors.cyan, marginTop: 14 },
     error: { color: colors.danger, fontSize: 11, marginTop: 14 },
-    salon: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
-    coverThumb: { width: 62, height: 62, backgroundColor: colors.panelRaised },
-    coverFallback: { width: 62, height: 62, alignItems: "center", justifyContent: "center", backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border },
+    salon: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
+    coverThumb: { width: 62, height: 62, borderRadius: 8, backgroundColor: colors.panelRaised },
+    coverFallback: { width: 62, height: 62, alignItems: "center", justifyContent: "center", borderRadius: 8, backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border },
     code: { color: colors.cyan, fontWeight: "900", fontSize: 12 },
     salonCopy: { flex: 1 },
     name: { color: colors.text, fontWeight: "800", fontSize: 14 },
     rating: { color: colors.amber, fontSize: 10, marginTop: 6 },
     address: { color: colors.text, fontSize: 11, lineHeight: 16, marginTop: 7 },
     meta: { color: colors.muted, fontSize: 10, marginTop: 6 },
-    mapBadge: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan },
+    mapBadge: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan, borderRadius: 8 },
     mapText: { color: colors.cyan, fontSize: 9, fontWeight: "900" },
     empty: { color: colors.muted, fontSize: 12, lineHeight: 18 },
     detailTitle: { color: colors.text, fontSize: 28, fontWeight: "900", marginTop: 16 },
     description: { color: colors.muted, fontSize: 12, lineHeight: 19, marginTop: 12 },
-    galleryImage: { width: 180, height: 120, marginRight: 10, backgroundColor: colors.panelRaised },
-    imagePlaceholder: { minHeight: 90, justifyContent: "center", padding: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
-    reviewSummary: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: colors.heroBorder, backgroundColor: colors.panelRaised },
+    galleryImage: { width: 180, height: 120, marginRight: 10, borderRadius: 8, backgroundColor: colors.panelRaised },
+    imagePlaceholder: { minHeight: 90, justifyContent: "center", padding: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
+    reviewSummary: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: colors.heroBorder, borderRadius: 8, backgroundColor: colors.panelRaised },
     reviewScore: { color: colors.amber, fontSize: 24, fontWeight: "900" },
     reviewMeta: { color: colors.text, fontSize: 12, fontWeight: "800" },
-    reviewCard: { padding: 13, marginBottom: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    reviewCard: { padding: 13, marginBottom: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
     reviewStars: { color: colors.amber, fontSize: 14, fontWeight: "900" },
     reviewAuthor: { color: colors.muted, fontSize: 10, marginTop: 7 },
     reviewComment: { color: colors.text, fontSize: 12, lineHeight: 18, marginTop: 8 },
-    serviceRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
+    serviceRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.background },
     serviceSelected: { borderColor: colors.cyan, backgroundColor: colors.activePanel },
     charge: { color: colors.cyan, fontSize: 13, fontWeight: "900" },
-    checkCircle: { width: 30, height: 30, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan },
+    checkCircle: { width: 30, height: 30, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan, borderRadius: 15 },
     checkActive: { color: colors.cyan, fontSize: 18, fontWeight: "900" },
     checkInactive: { color: colors.muted, fontSize: 18, fontWeight: "900" },
     bookingPanel: { padding: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
@@ -670,6 +861,15 @@ function createStyles(colors: ThemeColors) {
     bookingInput: { color: colors.text, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.background, fontSize: 13, marginBottom: 10 },
     addressInput: { minHeight: 64, textAlignVertical: "top" },
     instructionsInput: { minHeight: 78, textAlignVertical: "top" },
+    savedAddressList: { gap: 8, marginBottom: 10 },
+    savedAddressRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: 11, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.background },
+    savedAddressActive: { borderColor: colors.cyan, backgroundColor: colors.activePanel },
+    savedAddressIcon: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan, borderRadius: 8, backgroundColor: colors.panel },
+    savedAddressIconActive: { backgroundColor: colors.cyan },
+    savedAddressTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    savedAddressLabel: { color: colors.text, fontSize: 12, fontWeight: "900" },
+    savedAddressText: { color: colors.muted, fontSize: 11, lineHeight: 16, marginTop: 4 },
+    defaultBadge: { color: colors.green, fontSize: 8, fontWeight: "900", letterSpacing: 0.8 },
     selectedStrip: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 2, marginBottom: 2 },
     selectedPill: { paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: colors.cyan, borderRadius: 999, backgroundColor: colors.activePanel },
     selectedPillText: { color: colors.cyan, fontSize: 10, fontWeight: "900" },
@@ -677,9 +877,9 @@ function createStyles(colors: ThemeColors) {
     summaryTitle: { color: colors.muted, fontSize: 9, fontWeight: "900", letterSpacing: 1.2 },
     summaryLine: { color: colors.text, fontSize: 12, fontWeight: "800", marginTop: 8 },
     summaryAmount: { color: colors.cyan, fontSize: 20, fontWeight: "900", marginTop: 8 },
-    confirmButton: { alignItems: "center", justifyContent: "center", minHeight: 50, paddingHorizontal: 14, backgroundColor: colors.cyan, marginTop: 4 },
+    confirmButton: { alignItems: "center", justifyContent: "center", minHeight: 50, paddingHorizontal: 14, borderRadius: 8, backgroundColor: colors.cyan, marginTop: 4 },
     mapIconButton: { alignSelf: "flex-end", width: 48, height: 44, alignItems: "center", justifyContent: "center", marginTop: 10, borderRadius: 8, backgroundColor: colors.cyan },
-    successBadge: { padding: 14, marginBottom: 10, borderWidth: 1, borderColor: colors.green, backgroundColor: colors.successPanel },
+    successBadge: { padding: 14, marginBottom: 10, borderWidth: 1, borderColor: colors.green, borderRadius: 8, backgroundColor: colors.successPanel },
     successTitle: { color: colors.green, fontSize: 13, fontWeight: "900" },
     successText: { color: colors.text, fontSize: 11, fontWeight: "700", marginTop: 6 },
   });

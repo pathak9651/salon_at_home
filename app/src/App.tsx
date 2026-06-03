@@ -179,14 +179,14 @@ function createStyles(colors: typeof palettes.dark) {
   identityButton: { flex: 1 },
   identity: { color: colors.text, fontSize: 11, fontWeight: "700" },
   role: { color: colors.amber, fontSize: 9, fontWeight: "800", letterSpacing: 1 },
-  noticeButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan },
+  noticeButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan, borderRadius: 8 },
   noticeIcon: { fontSize: 17 },
-  noticeBadge: { position: "absolute", top: -7, right: -7, minWidth: 18, height: 18, alignItems: "center", justifyContent: "center", paddingHorizontal: 4, borderWidth: 1, borderColor: colors.bar, backgroundColor: colors.danger },
+  noticeBadge: { position: "absolute", top: -7, right: -7, minWidth: 18, height: 18, alignItems: "center", justifyContent: "center", paddingHorizontal: 4, borderWidth: 1, borderColor: colors.bar, borderRadius: 9, backgroundColor: colors.danger },
   noticeBadgeText: { color: colors.buttonText, fontSize: 8, fontWeight: "900" },
-  themeButton: { paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: colors.cyan },
+  themeButton: { paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: colors.cyan, borderRadius: 8 },
   themeButtonText: { color: colors.cyan, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
   tabs: { flexDirection: "row", borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.bar },
   tab: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 56, paddingVertical: 12 },
-  tabSelected: { backgroundColor: colors.activePanel },
+  tabSelected: { borderRadius: 8, backgroundColor: colors.activePanel },
   });
 }

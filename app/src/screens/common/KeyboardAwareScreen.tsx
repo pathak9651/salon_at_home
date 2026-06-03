@@ -1,4 +1,4 @@
-import { ReactNode, RefObject, useEffect, useRef, useState } from "react";
+import { Children, ReactNode, RefObject, useEffect, useRef, useState } from "react";
 import { Dimensions, Keyboard, KeyboardAvoidingView, KeyboardEvent, Platform, ScrollView, ScrollViewProps, StyleProp, StyleSheet, TextInput, ViewStyle } from "react-native";
 
 type KeyboardAwareScreenProps = {
@@ -81,7 +81,7 @@ export function KeyboardAwareScreen({
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={showsVerticalScrollIndicator}
       >
-        {children}
+        {Children.toArray(children)}
       </ScrollView>
     </KeyboardAvoidingView>
   );

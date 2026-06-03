@@ -492,10 +492,10 @@ function createStyles(colors: ThemeColors) {
     reviewDone: { color: colors.amber, fontSize: 11, fontWeight: "900", marginTop: 12 },
     reviewPanel: { marginTop: 12, padding: 12, borderWidth: 1, borderColor: colors.heroBorder, borderRadius: 8, backgroundColor: colors.panelRaised },
     starRow: { flexDirection: "row", gap: 6, marginBottom: 10 },
-    starButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+    starButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
     starActive: { color: colors.amber, fontSize: 20, fontWeight: "900" },
     starInactive: { color: colors.muted, fontSize: 20, fontWeight: "900" },
-    reviewInput: { color: colors.text, minHeight: 82, padding: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, fontSize: 12, textAlignVertical: "top", marginBottom: 10 },
+    reviewInput: { color: colors.text, minHeight: 82, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel, fontSize: 12, textAlignVertical: "top", marginBottom: 10 },
     placeholder: { color: colors.placeholder },
   });
 }
