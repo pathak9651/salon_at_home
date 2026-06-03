@@ -11,7 +11,7 @@ import profileRoutes from "./modules/profile/profile.routes";
 import reviewRoutes from "./modules/reviews/review.routes";
 import salonRoutes from "./modules/salons/salon.routes";
 import { errorHandler } from "./middleware/error.middleware";
-import { bookingLimiter, burstLimiter, globalLimiter, ipBlocker, paymentLimiter, uploadLimiter } from "./middleware/rate-limit.middleware";
+import { authIpAbuseLimiter, bookingLimiter, burstLimiter, globalLimiter, ipBlocker, paymentLimiter, uploadLimiter } from "./middleware/rate-limit.middleware";
 import { rejectUnsupportedContentType, requestTimeout } from "./middleware/request-guard.middleware";
 import { corsMiddleware, helmetMiddleware, noStore } from "./middleware/security.middleware";
 
@@ -21,7 +21,6 @@ if (env.TRUST_PROXY) app.set("trust proxy", 1);
 app.use(helmetMiddleware);
 app.use(corsMiddleware);
 app.use(requestTimeout);
-app.use(ipBlocker);
 app.use(burstLimiter);
 app.use(globalLimiter);
 app.post("/api/payments/webhook", express.raw({ type: "application/json", limit: "256kb" }), razorpayWebhookHandler);
@@ -37,7 +36,7 @@ app.use("/uploads", express.static(path.join(process.cwd(), "uploads"), {
 }));
 
 app.get("/health", (_req, res) => res.json({ status: "ok", service: "salon-at-home-api" }));
-app.use("/api/auth", authRoutes);
+app.use("/api/auth", ipBlocker, authIpAbuseLimiter, authRoutes);
 app.use("/api/profile/photo", uploadLimiter);
 app.use("/api/profile", profileRoutes);
 app.use("/api/salons/:id/images/upload", uploadLimiter);

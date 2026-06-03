@@ -1,5 +1,6 @@
 import rateLimit from "express-rate-limit";
 import { NextFunction, Request, Response } from "express";
+import jwt from "jsonwebtoken";
 import { prisma } from "../config/prisma";
 
 const IP_BLOCK_MS = 15 * 60 * 1000;
@@ -22,6 +23,15 @@ const ipBlockStore = (prisma as unknown as { ipBlock: IpBlockDelegate }).ipBlock
 
 function clientIp(req: Request) {
   return req.ip ?? "unknown";
+}
+
+function authenticatedOrIpKey(req: Request) {
+  const token = req.header("authorization")?.replace(/^Bearer\s+/i, "");
+  const payload = token ? jwt.decode(token) : null;
+  if (payload && typeof payload === "object" && typeof payload.sub === "string") {
+    return `user:${payload.sub}`;
+  }
+  return `ip:${clientIp(req)}`;
 }
 
 async function blockIp(ip: string) {
@@ -55,20 +65,32 @@ async function blockAndReject(req: Request, res: Response) {
 const standardOptions = {
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: authenticatedOrIpKey,
   message: { error: "Too many requests. Please try again later." },
+};
+
+const blockingOptions = {
+  ...standardOptions,
+  keyGenerator: clientIp,
   handler: blockAndReject,
 };
+
+export const authIpAbuseLimiter = rateLimit({
+  ...blockingOptions,
+  windowMs: 5 * 60 * 1000,
+  limit: 300,
+});
 
 export const burstLimiter = rateLimit({
   ...standardOptions,
   windowMs: 60 * 1000,
-  limit: 60,
+  limit: 300,
 });
 
 export const globalLimiter = rateLimit({
   ...standardOptions,
   windowMs: 15 * 60 * 1000,
-  limit: 200,
+  limit: 1000,
 });
 
 export const authLimiter = rateLimit({

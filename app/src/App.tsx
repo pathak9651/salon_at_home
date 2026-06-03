@@ -111,7 +111,9 @@ function AppContent() {
     <SafeAreaView style={styles.safe}>
       <ExpoStatusBar hidden={false} style={mode === "dark" ? "light" : "dark"} backgroundColor={colors.bar} />
       <View style={styles.sessionBar}>
-        <Text style={styles.identity}>{session.user.name ?? session.user.email ?? session.user.phone}</Text>
+        <TouchableOpacity accessibilityLabel="Go to home" accessibilityRole="button" onPress={() => setTab("home")} style={styles.identityButton}>
+          <Text style={styles.identity}>{session.user.name ?? session.user.email ?? session.user.phone}</Text>
+        </TouchableOpacity>
         <Text style={styles.role}>{session.user.role === "OWNER" ? "MERCHANT" : session.user.role}</Text>
         <TouchableOpacity onPress={() => setTab("notifications")} style={styles.noticeButton}>
           <Text style={styles.noticeIcon}>🔔</Text>
@@ -174,7 +176,8 @@ function createStyles(colors: typeof palettes.dark) {
   loading: { flex: 1, paddingTop: topInset, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
   content: { flex: 1 },
   sessionBar: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.bar },
-  identity: { flex: 1, color: colors.text, fontSize: 11, fontWeight: "700" },
+  identityButton: { flex: 1 },
+  identity: { color: colors.text, fontSize: 11, fontWeight: "700" },
   role: { color: colors.amber, fontSize: 9, fontWeight: "800", letterSpacing: 1 },
   noticeButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.cyan },
   noticeIcon: { fontSize: 17 },
