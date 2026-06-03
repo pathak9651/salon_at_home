@@ -1,4 +1,5 @@
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { apiRequest } from "../../api/client";
@@ -226,6 +227,45 @@ export function OwnerHomeScreen({ token }: { token: string }) {
   return (
     <KeyboardAwareScreen contentContainerStyle={styles.page}>
       <ScreenHeader eyebrow="PARTNER CONSOLE // MERCHANT" title="Salon dashboard" subtitle="Track bookings, daily earnings, booking analytics, customers, and request actions." />
+      <View style={styles.merchantHero}>
+        <View style={styles.heroCopy}>
+          <Text style={styles.heroKicker}>HELLO MERCHANT</Text>
+          <Text style={styles.heroTitle}>BarberX partner desk</Text>
+          <Text style={styles.heroText}>Accept new requests, assign stylists, close services cleanly, and grow your daily salon income.</Text>
+        </View>
+        <View style={styles.heroArt}>
+          <View style={styles.salonBoard}>
+            <Ionicons name="storefront-outline" size={24} color={colors.cyan} />
+            <View style={styles.boardLineWide} />
+            <View style={styles.boardLine} />
+          </View>
+          <View style={styles.heroScissor}><Ionicons name="cut" size={24} color={colors.buttonText} /></View>
+          <View style={styles.heroCalendar}><Ionicons name="calendar-outline" size={18} color={colors.green} /></View>
+        </View>
+      </View>
+      <View style={styles.bannerGrid}>
+        <View style={styles.infoBanner}>
+          <Ionicons name="notifications-outline" size={24} color={colors.amber} />
+          <View style={styles.bannerCopy}>
+            <Text style={styles.bannerTitle}>{requestBookings.length} new request(s)</Text>
+            <Text style={styles.bannerText}>Respond quickly to improve client confidence and conversion.</Text>
+          </View>
+        </View>
+        <View style={styles.infoBanner}>
+          <Ionicons name="cash-outline" size={24} color={colors.green} />
+          <View style={styles.bannerCopy}>
+            <Text style={styles.bannerTitle}>INR {dailyEarnings} earned today</Text>
+            <Text style={styles.bannerText}>Payments close only after online success or client cash confirmation.</Text>
+          </View>
+        </View>
+        <View style={styles.infoBanner}>
+          <Ionicons name="people-outline" size={24} color={colors.cyan} />
+          <View style={styles.bannerCopy}>
+            <Text style={styles.bannerTitle}>{employees.filter((employee) => employee.isActive).length} active stylist(s)</Text>
+            <Text style={styles.bannerText}>Assign bookings to available team members from each request card.</Text>
+          </View>
+        </View>
+      </View>
       <View style={styles.grid}>
         <Metric styles={styles} label="TOTAL BOOKINGS" value={String(bookings.length)} />
         <Metric styles={styles} label="DAILY EARNINGS" value={`INR ${dailyEarnings}`} />
@@ -607,6 +647,22 @@ function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
     center: { flex: 1, alignItems: "center", justifyContent: "center" },
     page: { padding: 20, paddingBottom: 34 },
+    merchantHero: { minHeight: 188, flexDirection: "row", alignItems: "center", gap: 12, padding: 16, marginBottom: 12, overflow: "hidden", borderWidth: 1, borderColor: colors.heroBorder, borderRadius: 8, backgroundColor: colors.panelRaised },
+    heroCopy: { flex: 1.18 },
+    heroKicker: { color: colors.amber, fontSize: 9, fontWeight: "900", letterSpacing: 1.4 },
+    heroTitle: { color: colors.text, fontSize: 25, fontWeight: "900", lineHeight: 31, marginTop: 8 },
+    heroText: { color: colors.muted, fontSize: 11, fontWeight: "700", lineHeight: 17, marginTop: 9 },
+    heroArt: { width: 126, height: 136, justifyContent: "center", alignItems: "center" },
+    salonBoard: { width: 96, height: 92, alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
+    boardLineWide: { width: 54, height: 7, borderRadius: 999, backgroundColor: colors.activePanel },
+    boardLine: { width: 36, height: 7, borderRadius: 999, backgroundColor: colors.border },
+    heroScissor: { position: "absolute", right: 2, top: 7, width: 48, height: 48, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: colors.panelRaised, borderRadius: 24, backgroundColor: colors.cyan },
+    heroCalendar: { position: "absolute", left: 2, bottom: 7, width: 38, height: 38, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.heroBorder, borderRadius: 8, backgroundColor: colors.panel },
+    bannerGrid: { gap: 10, marginBottom: 12 },
+    infoBanner: { flexDirection: "row", alignItems: "center", gap: 12, padding: 13, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panel },
+    bannerCopy: { flex: 1 },
+    bannerTitle: { color: colors.text, fontSize: 13, fontWeight: "900" },
+    bannerText: { color: colors.muted, fontSize: 10, fontWeight: "700", lineHeight: 15, marginTop: 4 },
     grid: { flexDirection: "row", gap: 10 },
     metric: { flex: 1, padding: 15, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.panelRaised },
     label: { color: colors.muted, fontSize: 9, fontWeight: "800", letterSpacing: 1, marginBottom: 7 },
