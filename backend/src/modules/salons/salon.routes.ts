@@ -1,21 +1,25 @@
 import { randomUUID } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
-import { UserRole } from "@prisma/client";
+import { Prisma, UserRole } from "@prisma/client";
 import express, { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../../config/prisma";
 import { requireAuth, requireRole } from "../../middleware/auth.middleware";
-import { requireImageUpload } from "../../middleware/upload.middleware";
+import { imageExtensionByType, normalizeUploadedImage, requireImageUpload } from "../../middleware/upload.middleware";
 import { asyncHandler } from "../../utils/async-handler";
 import { HttpError } from "../../utils/http-error";
 
 const router = Router();
 
 const imageUrlSchema = z.string().trim().min(1).refine((value) => {
-  if (value.startsWith("/uploads/")) return true;
-  return /^https?:\/\//i.test(value);
-}, "Image must be an uploaded image path or a valid URL");
+  return value.startsWith("/uploads/");
+}, "Image must be uploaded through the app");
+
+const pageQueryFields = {
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+};
 
 function distanceKm(fromLat: number, fromLng: number, toLat: number, toLng: number) {
   const earthRadiusKm = 6371;
@@ -36,11 +40,12 @@ router.get("/", asyncHandler(async (req, res) => {
     minRating: z.coerce.number().min(0).max(5).optional(),
     maxPrice: z.coerce.number().int().positive().optional(),
     service: z.string().trim().optional(),
+    ...pageQueryFields,
   }).parse(req.query);
 
-  const salons = await prisma.salon.findMany({
-    where: {
+  const where: Prisma.SalonWhereInput = {
       status: "APPROVED",
+      owner: { deletedAt: null },
       ...(query.search && {
         OR: [
           { name: { contains: query.search, mode: "insensitive" } },
@@ -51,10 +56,18 @@ router.get("/", asyncHandler(async (req, res) => {
       }),
       ...(query.service && { services: { some: { name: { contains: query.service, mode: "insensitive" } } } }),
       ...(query.maxPrice && { services: { some: { price: { lte: query.maxPrice } } } }),
-    },
+    };
+  const [total, salons] = await Promise.all([
+    prisma.salon.count({ where }),
+    prisma.salon.findMany({
+    where,
     include: { services: true, images: true, reviews: { select: { rating: true } } },
     orderBy: { createdAt: "desc" },
-  });
+    skip: (query.page - 1) * query.limit,
+    take: query.limit,
+  }),
+  ]);
+  res.setHeader("X-Total-Count", total);
 
   const withLocationMeta = salons.map((salon) => {
     const rating = salon.reviews.length
@@ -141,20 +154,12 @@ router.post("/:id/images", requireAuth, requireRole(UserRole.OWNER), asyncHandle
 router.post("/:id/images/upload", requireAuth, requireRole(UserRole.OWNER), express.raw({ type: ["image/jpeg", "image/png", "image/webp"], limit: "5mb" }), requireImageUpload, asyncHandler(async (req, res) => {
   const salon = await prisma.salon.findFirst({ where: { id: String(req.params.id), ownerId: req.user!.id } });
   if (!salon) throw new HttpError(404, "Salon not found");
-  if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new HttpError(400, "Upload an image file");
-
-  const extensionByType: Record<string, string> = {
-    "image/jpeg": "jpg",
-    "image/png": "png",
-    "image/webp": "webp",
-  };
-  const extension = extensionByType[req.header("content-type") ?? ""];
-  if (!extension) throw new HttpError(415, "Only JPG, PNG, or WEBP images are supported");
+  const extension = imageExtensionByType[req.header("content-type") as keyof typeof imageExtensionByType];
 
   const uploadDir = path.join(process.cwd(), "uploads", "salons");
   await mkdir(uploadDir, { recursive: true });
   const filename = `${salon.id}-${randomUUID()}.${extension}`;
-  await writeFile(path.join(uploadDir, filename), req.body);
+  await writeFile(path.join(uploadDir, filename), await normalizeUploadedImage(req.body, req.header("content-type") ?? ""));
 
   const image = await prisma.salonImage.create({
     data: { salonId: salon.id, url: `/uploads/salons/${filename}`, caption: "Salon photo" },

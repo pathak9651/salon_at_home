@@ -1,4 +1,4 @@
-import { BookingStatus, UserRole } from "@prisma/client";
+import { BookingStatus, Prisma, UserRole } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../../config/prisma";
@@ -21,6 +21,11 @@ const bookingInclude = {
   client: { select: { id: true, name: true, phone: true, email: true } },
 };
 
+const pageQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(30),
+});
+
 function shapeBookingForUser<T extends { client?: unknown; status: BookingStatus }>(booking: T, role: UserRole) {
   if (role !== UserRole.OWNER || booking.status !== BookingStatus.PENDING) return booking;
   return { ...booking, client: null };
@@ -31,14 +36,22 @@ function serviceNames(booking: { service?: { name: string }; services?: Array<{ 
 }
 
 router.get("/", asyncHandler(async (req, res) => {
+  const query = pageQuerySchema.parse(req.query);
   const where = req.user!.role === UserRole.OWNER
     ? { salon: { ownerId: req.user!.id } }
     : { clientId: req.user!.id };
-  res.json(await prisma.booking.findMany({
-    where,
-    include: bookingInclude,
-    orderBy: { scheduledAt: "desc" },
-  }).then((bookings) => bookings.map((booking) => shapeBookingForUser(booking, req.user!.role))));
+  const [total, bookings] = await Promise.all([
+    prisma.booking.count({ where }),
+    prisma.booking.findMany({
+      where,
+      include: bookingInclude,
+      orderBy: { scheduledAt: "desc" },
+      skip: (query.page - 1) * query.limit,
+      take: query.limit,
+    }),
+  ]);
+  res.setHeader("X-Total-Count", total);
+  res.json(bookings.map((booking) => shapeBookingForUser(booking, req.user!.role)));
 }));
 
 router.post("/", requireRole(UserRole.CLIENT), asyncHandler(async (req, res) => {
@@ -74,6 +87,7 @@ router.post("/", requireRole(UserRole.CLIENT), asyncHandler(async (req, res) => 
       },
       include: bookingInclude,
     });
+    await tx.bookingSlot.create({ data: { salonId: data.salonId, scheduledAt: data.scheduledAt, bookingId: created.id } });
     await createNotifications([
       {
         userId: req.user!.id,
@@ -91,6 +105,11 @@ router.post("/", requireRole(UserRole.CLIENT), asyncHandler(async (req, res) => 
       },
     ], tx);
     return created;
+  }).catch((error: unknown) => {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new HttpError(409, "This salon already has a booking at the selected time");
+    }
+    throw error;
   });
   res.status(201).json(booking);
 }));
@@ -116,6 +135,11 @@ router.patch("/:id/reschedule", asyncHandler(async (req, res) => {
   }
 
   const updated = await prisma.$transaction(async (tx) => {
+    await tx.bookingSlot.upsert({
+      where: { bookingId: booking.id },
+      update: { salonId: booking.salonId, scheduledAt },
+      create: { bookingId: booking.id, salonId: booking.salonId, scheduledAt },
+    });
     const nextBooking = await tx.booking.update({
       where: { id: booking.id },
       data: { scheduledAt },
@@ -138,6 +162,11 @@ router.patch("/:id/reschedule", asyncHandler(async (req, res) => {
       },
     ], tx);
     return nextBooking;
+  }).catch((error: unknown) => {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new HttpError(409, "This salon already has a booking at the selected time");
+    }
+    throw error;
   });
   res.json(shapeBookingForUser(updated, req.user!.role));
 }));
@@ -191,6 +220,9 @@ router.patch("/:id/status", asyncHandler(async (req, res) => {
   }
   const updated = await prisma.$transaction(async (tx) => {
     const nextBooking = await tx.booking.update({ where: { id: booking.id }, data: { status }, include: bookingInclude });
+    if (status === BookingStatus.REJECTED || status === BookingStatus.CANCELLED) {
+      await tx.bookingSlot.delete({ where: { bookingId: booking.id } }).catch(() => undefined);
+    }
     if (status === BookingStatus.ACCEPTED) {
       await createNotifications([
         {

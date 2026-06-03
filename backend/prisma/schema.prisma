@@ -70,6 +70,7 @@ model User {
   profilePhotoUrl String?
   sessionVersion Int      @default(0)
   isSuspended Boolean     @default(false)
+  deletedAt DateTime?
   emailVerified Boolean   @default(false)
   verificationCodeHash String?
   verificationExpiresAt DateTime?
@@ -172,6 +173,8 @@ model Booking {
   instructions String?
   totalAmount Int
   status      BookingStatus @default(PENDING)
+  cashConfirmationCodeHash String?
+  cashConfirmationExpiresAt DateTime?
   disputeStatus DisputeStatus @default(NONE)
   disputeNote String?
   disputeResolvedAt DateTime?
@@ -188,6 +191,19 @@ model Booking {
   review      Review?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+  slot         BookingSlot?
+}
+
+model BookingSlot {
+  id          String   @id @default(uuid())
+  salonId     String
+  scheduledAt DateTime
+  bookingId   String   @unique
+  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([salonId, scheduledAt])
+  @@index([bookingId])
 }
 
 model BookingService {
@@ -252,4 +268,45 @@ model Notification {
   @@index([userId, readAt, createdAt])
   @@index([bookingId])
   @@index([paymentId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String?
+  actorRole UserRole?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([entity, entityId])
+  @@index([action, createdAt])
+}
+
+model IpBlock {
+  id           String   @id @default(uuid())
+  ip           String   @unique
+  reason       String?
+  blockedUntil DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([blockedUntil])
+}
+
+model SecurityAttempt {
+  id             String    @id @default(uuid())
+  key            String    @unique
+  count          Int       @default(0)
+  firstAttemptAt DateTime
+  lockedUntil    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([lockedUntil])
+  @@index([firstAttemptAt])
 }

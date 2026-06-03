@@ -2,7 +2,14 @@ import Constants from "expo-constants";
 import { Platform } from "react-native";
 
 function getApiUrl() {
-  if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    if (!__DEV__ && !process.env.EXPO_PUBLIC_API_URL.startsWith("https://")) {
+      throw new Error("Production API URL must use HTTPS.");
+    }
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+
+  if (!__DEV__) throw new Error("EXPO_PUBLIC_API_URL is required for production builds.");
 
   const metroHost = Constants.expoConfig?.hostUri?.split(":")[0];
   if (metroHost) return `http://${metroHost}:4000/api`;

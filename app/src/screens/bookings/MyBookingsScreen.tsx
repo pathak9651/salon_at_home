@@ -158,6 +158,25 @@ export function MyBookingsScreen({ token }: { token: string }) {
     }
   }
 
+  async function confirmCashPayment(booking: Booking) {
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      await apiRequest<Payment>("/payments/cash/confirm", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ bookingId: booking.id }),
+      });
+      setNotice("Cash payment confirmed. Booking closed.");
+      await loadBookings();
+    } catch (cashError) {
+      setError(cashError instanceof Error ? cashError.message : "Could not confirm cash payment");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function cancelBooking(id: string) {
     setSaving(true);
     setError("");
@@ -270,13 +289,13 @@ export function MyBookingsScreen({ token }: { token: string }) {
       </View>
 
       <SectionTitle styles={styles} title="Upcoming" count={upcoming.length} />
-      {upcoming.length ? upcoming.map((booking) => <BookingCard booking={booking} key={booking.id} styles={styles} saving={saving} onCancel={cancelBooking} onStartReschedule={startReschedule} reschedulingBookingId={reschedulingBookingId} rescheduleDate={rescheduleDate} rescheduleTime={rescheduleTime} setShowDatePicker={setShowDatePicker} setShowTimePicker={setShowTimePicker} onSubmitReschedule={submitReschedule} onPay={payForBooking} onInvoice={showInvoice} />) : <Text style={styles.empty}>No upcoming bookings.</Text>}
+      {upcoming.length ? upcoming.map((booking) => <BookingCard booking={booking} key={booking.id} styles={styles} saving={saving} onCancel={cancelBooking} onStartReschedule={startReschedule} reschedulingBookingId={reschedulingBookingId} rescheduleDate={rescheduleDate} rescheduleTime={rescheduleTime} setShowDatePicker={setShowDatePicker} setShowTimePicker={setShowTimePicker} onSubmitReschedule={submitReschedule} onPay={payForBooking} onConfirmCash={confirmCashPayment} onInvoice={showInvoice} />) : <Text style={styles.empty}>No upcoming bookings.</Text>}
 
       {showDatePicker && <DateTimePicker value={rescheduleDateValue ?? new Date()} mode="date" minimumDate={new Date()} display="default" onChange={updateDate} />}
       {showTimePicker && <DateTimePicker value={rescheduleTimeValue ?? new Date()} mode="time" display="default" onChange={updateTime} />}
 
       <SectionTitle styles={styles} title="Awaiting payment" count={awaitingPayment.length} />
-      {awaitingPayment.length ? awaitingPayment.map((booking) => <BookingCard booking={booking} key={booking.id} styles={styles} saving={saving} onPay={payForBooking} onInvoice={showInvoice} />) : <Text style={styles.empty}>No payment requests right now.</Text>}
+      {awaitingPayment.length ? awaitingPayment.map((booking) => <BookingCard booking={booking} key={booking.id} styles={styles} saving={saving} onPay={payForBooking} onConfirmCash={confirmCashPayment} onInvoice={showInvoice} />) : <Text style={styles.empty}>No payment requests right now.</Text>}
 
       <SectionTitle styles={styles} title="History" count={completed.length} />
       {completed.length ? completed.map((booking) => <BookingCard booking={booking} key={booking.id} styles={styles} saving={saving} onPay={payForBooking} onInvoice={showInvoice} onStartReview={startReview} onSubmitReview={submitReview} reviewingBookingId={reviewingBookingId} reviewRating={reviewRating} reviewComment={reviewComment} setReviewRating={setReviewRating} setReviewComment={setReviewComment} />) : <Text style={styles.empty}>No completed bookings yet.</Text>}
@@ -315,6 +334,7 @@ function BookingCard({
   setShowTimePicker,
   onSubmitReschedule,
   onPay,
+  onConfirmCash,
   onInvoice,
   onStartReview,
   onSubmitReview,
@@ -336,6 +356,7 @@ function BookingCard({
   setShowTimePicker?: (show: boolean) => void;
   onSubmitReschedule?: (id: string) => Promise<void>;
   onPay?: (booking: Booking) => Promise<void>;
+  onConfirmCash?: (booking: Booking) => Promise<void>;
   onInvoice?: (paymentId: string) => Promise<void>;
   onStartReview?: (booking: Booking) => void;
   onSubmitReview?: (id: string) => Promise<void>;
@@ -346,7 +367,8 @@ function BookingCard({
   setReviewComment?: (comment: string) => void;
 }) {
   const canManage = ["PENDING", "ACCEPTED"].includes(booking.status) && !!onCancel && !!onStartReschedule;
-  const canPay = booking.status === "PAYMENT_PENDING" && booking.payment?.status !== "PAID" && !!onPay;
+  const canPay = booking.status === "PAYMENT_PENDING" && booking.payment?.status !== "PAID" && booking.payment?.method !== "CASH" && !!onPay;
+  const canConfirmCash = booking.payment?.method === "CASH" && booking.payment.status === "CREATED" && !!onConfirmCash;
   const canViewInvoice = booking.payment?.status === "PAID" && !!booking.payment.id && !!onInvoice;
   const canReview = booking.status === "COMPLETED" && !booking.review && !!onStartReview;
   const isRescheduling = reschedulingBookingId === booking.id;
@@ -360,7 +382,8 @@ function BookingCard({
           <View style={styles.metaRow}><Ionicons name="storefront-outline" size={13} color={styles.placeholder.color} /><Text style={styles.bookingMeta}>{booking.salon?.name ?? "Salon"}</Text></View>
           <View style={styles.metaRow}><Ionicons name="time-outline" size={13} color={styles.placeholder.color} /><Text style={styles.bookingMeta}>{new Date(booking.scheduledAt).toLocaleString()}</Text></View>
           <View style={styles.metaRow}><Ionicons name="location-outline" size={13} color={styles.placeholder.color} /><Text style={styles.bookingMeta}>{booking.address}</Text></View>
-          {booking.status === "PAYMENT_PENDING" && booking.payment?.status !== "PAID" && <Text style={styles.payHint}>Service finished. Pay online to close this booking.</Text>}
+          {booking.status === "PAYMENT_PENDING" && booking.payment?.status !== "PAID" && booking.payment?.method !== "CASH" && <Text style={styles.payHint}>Service finished. Pay online to close this booking.</Text>}
+          {canConfirmCash && <Text style={styles.payHint}>Merchant requested cash closure. Confirm only after you paid.</Text>}
         </View>
         <View style={styles.bookingSide}>
           <Text style={[styles.bookingStatus, statusStyle(booking.status, styles)]}>{statusLabel(booking.status)}</Text>
@@ -378,6 +401,7 @@ function BookingCard({
         <TouchableOpacity disabled={saving} onPress={() => void onSubmitReschedule?.(booking.id)} style={styles.primary}><Text style={styles.primaryText}>SAVE NEW TIME</Text></TouchableOpacity>
       </View>}
       {canPay && <TouchableOpacity disabled={saving} onPress={() => void onPay?.(booking)} style={styles.payButton}><Text style={styles.primaryText}>PAY NOW</Text></TouchableOpacity>}
+      {canConfirmCash && <TouchableOpacity disabled={saving} onPress={() => Alert.alert("Confirm cash payment?", "Confirm only if you paid cash to the merchant.", [{ text: "Cancel" }, { text: "Confirm", onPress: () => void onConfirmCash?.(booking) }])} style={styles.payButton}><Text style={styles.primaryText}>CONFIRM CASH PAID</Text></TouchableOpacity>}
       {canViewInvoice && <TouchableOpacity onPress={() => void onInvoice?.(booking.payment!.id)} style={styles.invoiceButton}><Text style={styles.link}>VIEW DIGITAL INVOICE</Text></TouchableOpacity>}
       {!!booking.review && <Text style={styles.reviewDone}>Your rating: {"★".repeat(booking.review.rating)}{"☆".repeat(5 - booking.review.rating)}</Text>}
       {canReview && !isReviewing && <TouchableOpacity disabled={saving} onPress={() => onStartReview?.(booking)} style={styles.invoiceButton}><Text style={styles.link}>RATE SALON</Text></TouchableOpacity>}

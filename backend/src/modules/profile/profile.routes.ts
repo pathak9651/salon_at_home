@@ -6,7 +6,7 @@ import express, { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../../config/prisma";
 import { requireAuth } from "../../middleware/auth.middleware";
-import { requireImageUpload } from "../../middleware/upload.middleware";
+import { imageExtensionByType, normalizeUploadedImage, requireImageUpload } from "../../middleware/upload.middleware";
 import { asyncHandler } from "../../utils/async-handler";
 import { HttpError } from "../../utils/http-error";
 
@@ -62,20 +62,12 @@ router.patch("/", asyncHandler(async (req, res) => {
 }));
 
 router.put("/photo", express.raw({ type: ["image/jpeg", "image/png", "image/webp"], limit: "3mb" }), requireImageUpload, asyncHandler(async (req, res) => {
-  if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new HttpError(400, "Upload an image file");
-
-  const extensionByType: Record<string, string> = {
-    "image/jpeg": "jpg",
-    "image/png": "png",
-    "image/webp": "webp",
-  };
-  const extension = extensionByType[req.header("content-type") ?? ""];
-  if (!extension) throw new HttpError(415, "Only JPG, PNG, or WEBP images are supported");
+  const extension = imageExtensionByType[req.header("content-type") as keyof typeof imageExtensionByType];
 
   const uploadDir = path.join(process.cwd(), "uploads", "profiles");
   await mkdir(uploadDir, { recursive: true });
   const filename = `${req.user!.id}-${randomUUID()}.${extension}`;
-  await writeFile(path.join(uploadDir, filename), req.body);
+  await writeFile(path.join(uploadDir, filename), await normalizeUploadedImage(req.body, req.header("content-type") ?? ""));
 
   const profilePhotoUrl = `/uploads/profiles/${filename}`;
   const user = await prisma.user.update({
