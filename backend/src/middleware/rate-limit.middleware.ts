@@ -1,6 +1,7 @@
 import rateLimit from "express-rate-limit";
 import { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
+import { env } from "../config/env";
 import { prisma } from "../config/prisma";
 
 const IP_BLOCK_MS = 15 * 60 * 1000;
@@ -25,13 +26,31 @@ function clientIp(req: Request) {
   return req.ip ?? "unknown";
 }
 
-function authenticatedOrIpKey(req: Request) {
+function rateLimitUserId(req: Request) {
+  const requestWithCache = req as Request & { rateLimitUserId?: string | null };
+  if (requestWithCache.rateLimitUserId !== undefined) return requestWithCache.rateLimitUserId;
   const token = req.header("authorization")?.replace(/^Bearer\s+/i, "");
-  const payload = token ? jwt.decode(token) : null;
-  if (payload && typeof payload === "object" && typeof payload.sub === "string") {
-    return `user:${payload.sub}`;
+  if (!token) {
+    requestWithCache.rateLimitUserId = null;
+    return null;
   }
-  return `ip:${clientIp(req)}`;
+  try {
+    const payload = jwt.verify(token, env.JWT_SECRET);
+    requestWithCache.rateLimitUserId = payload && typeof payload === "object" && typeof payload.sub === "string" ? payload.sub : null;
+    return requestWithCache.rateLimitUserId;
+  } catch {
+    requestWithCache.rateLimitUserId = null;
+    return null;
+  }
+}
+
+function authenticatedOrIpKey(req: Request) {
+  const userId = rateLimitUserId(req);
+  return userId ? `user:${userId}` : `ip:${clientIp(req)}`;
+}
+
+function skipAuthenticatedRequest(req: Request) {
+  return Boolean(rateLimitUserId(req));
 }
 
 async function blockIp(ip: string) {
@@ -84,13 +103,15 @@ export const authIpAbuseLimiter = rateLimit({
 export const burstLimiter = rateLimit({
   ...standardOptions,
   windowMs: 60 * 1000,
-  limit: 300,
+  limit: 600,
+  skip: skipAuthenticatedRequest,
 });
 
 export const globalLimiter = rateLimit({
   ...standardOptions,
   windowMs: 15 * 60 * 1000,
-  limit: 1000,
+  limit: 5000,
+  skip: skipAuthenticatedRequest,
 });
 
 export const authLimiter = rateLimit({

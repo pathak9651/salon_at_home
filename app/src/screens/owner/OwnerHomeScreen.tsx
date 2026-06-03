@@ -132,7 +132,7 @@ export function OwnerHomeScreen({ token }: { token: string }) {
       });
       setCashBookingId(null);
       setCashRemark("");
-      setNotice("Cash confirmation requested. Booking will close after the client confirms.");
+      setNotice("Cash payment request successfully sent to client. Booking will close after the client confirms.");
       await loadBookings();
     } catch (cashError) {
       setError(cashError instanceof Error ? cashError.message : "Could not request cash confirmation");
