@@ -37,12 +37,6 @@ const envSchema = z.object({
   if (env.JWT_SECRET.length < 32) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["JWT_SECRET"], message: "JWT_SECRET must be at least 32 characters in production" });
   }
-  if (!env.CORS_ORIGINS) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["CORS_ORIGINS"], message: "CORS_ORIGINS is required in production" });
-  }
-  if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET || !env.RAZORPAY_WEBHOOK_SECRET) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["RAZORPAY_KEY_ID"], message: "Razorpay keys and webhook secret are required in production" });
-  }
   if (!((env.SMTP_HOST || env.EMAIL_HOST) && (env.SMTP_USER || env.EMAIL_USER) && (env.SMTP_PASS || env.EMAIL_PASS))) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["SMTP_HOST"], message: "SMTP configuration is required in production" });
   }
