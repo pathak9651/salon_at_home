@@ -24,6 +24,7 @@ import { HttpError } from "../../utils/http-error";
 
 const router = Router();
 const CODE_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_VERIFICATION_CODE = "123456";
 const passwordSchema = z.string()
   .min(8, "Password must be at least 8 characters")
   .max(72, "Password must be 72 characters or less")
@@ -44,7 +45,11 @@ function createToken(user: User) {
   });
 }
 
-function createCode() {
+function createVerificationCode() {
+  return DEFAULT_VERIFICATION_CODE;
+}
+
+function createResetCode() {
   return env.OTP_BYPASS_CODE ?? String(Math.floor(100000 + Math.random() * 900000));
 }
 
@@ -77,7 +82,7 @@ router.post("/signup", asyncHandler(async (req, res) => {
   const existingUser = await prisma.user.findFirst({ where: { deletedAt: null, OR: [{ email: data.email }, { phone: data.phone }] } });
   if (existingUser) throw new HttpError(409, "An account with this email or phone already exists");
 
-  const code = createCode();
+  const code = createVerificationCode();
   const referralCode = await generateUniqueReferralCode(data.name, data.phone);
   await prisma.user.create({
     data: {
@@ -91,14 +96,11 @@ router.post("/signup", asyncHandler(async (req, res) => {
       verificationExpiresAt: new Date(Date.now() + CODE_TTL_MS),
     },
   });
-  const emailSent = await trySendAuthCode(data.email, code, "verify");
-  if (!emailSent) {
-    return res.status(202).json({
-      message: "Account created, but the verification email could not be sent. Please try resending the code in a moment.",
-      email: data.email,
-    });
-  }
-  res.status(201).json({ message: "Account created. Verify your email to continue.", email: data.email });
+  res.status(201).json({
+    message: "Account created. Use OTP 123456 to verify your email.",
+    email: data.email,
+    code,
+  });
 }));
 
 router.post("/verify-account", asyncHandler(async (req, res) => {
@@ -129,12 +131,9 @@ router.post("/resend-verification", asyncHandler(async (req, res) => {
   const { email } = z.object({ email: emailSchema }).parse(req.body);
   const user = await prisma.user.findFirst({ where: { email, deletedAt: null } });
   if (!user || user.emailVerified) return res.json({ message: "If verification is required, a code has been sent." });
-  const code = createCode();
+  const code = createVerificationCode();
   await prisma.user.update({ where: { id: user.id }, data: { verificationCodeHash: await hashCode(code), verificationExpiresAt: new Date(Date.now() + CODE_TTL_MS) } });
-  if (!(await trySendAuthCode(email, code, "verify"))) {
-    throw new HttpError(503, "Verification email could not be sent. Please try again later.");
-  }
-  res.json({ message: "Verification code sent." });
+  res.json({ message: "Verification code reset to the default OTP.", code });
 }));
 
 router.post("/login", asyncHandler(async (req, res) => {
@@ -167,7 +166,7 @@ router.post("/forgot-password", asyncHandler(async (req, res) => {
   const normalized = identifier.toLowerCase();
   const user = await prisma.user.findFirst({ where: { deletedAt: null, OR: [{ email: normalized }, { phone: identifier }] } });
   if (!user?.email) return res.json({ message: "If the account exists, a reset code has been sent." });
-  const code = createCode();
+  const code = createResetCode();
   await prisma.user.update({ where: { id: user.id }, data: { resetCodeHash: await hashCode(code), resetExpiresAt: new Date(Date.now() + CODE_TTL_MS) } });
   if (!(await trySendAuthCode(user.email, code, "reset"))) {
     throw new HttpError(503, "Password reset email could not be sent. Please try again later.");
