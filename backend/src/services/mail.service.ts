@@ -1,6 +1,9 @@
+import dns from "node:dns";
 import nodemailer from "nodemailer";
 import { env } from "../config/env";
 import { HttpError } from "../utils/http-error";
+
+dns.setDefaultResultOrder("ipv4first");
 
 const transporter = env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS
   ? nodemailer.createTransport({
@@ -8,6 +11,7 @@ const transporter = env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS
       port: env.SMTP_PORT,
       secure: env.SMTP_SECURE === "true",
       auth: { user: env.SMTP_USER, pass: env.SMTP_PASS },
+      tls: { servername: env.SMTP_HOST },
       connectionTimeout: 8_000,
       greetingTimeout: 8_000,
       socketTimeout: 10_000,
