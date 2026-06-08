@@ -7,6 +7,324 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id                     String           @id @default(uuid())
+  name                   String?
+  phone                  String           @unique
+  email                  String?          @unique
+  referralCode           String?          @unique
+  password               String?
+  profilePhotoUrl        String?
+  sessionVersion         Int              @default(0)
+  isSuspended            Boolean          @default(false)
+  deletedAt              DateTime?
+  emailVerified          Boolean          @default(false)
+  verificationCodeHash   String?
+  verificationExpiresAt  DateTime?
+  resetCodeHash          String?
+  resetExpiresAt         DateTime?
+  role                   UserRole         @default(CLIENT)
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  bookings               Booking[]
+  notifications          Notification[]
+  reviews                Review[]
+  salons                 Salon[]
+  supportMessages        SupportMessage[]
+  assignedSupportTickets SupportTicket[]  @relation("SupportAdmin")
+  supportTickets         SupportTicket[]  @relation("SupportClient")
+  addresses              UserAddress[]
+  memberships            UserMembership[]
+}
+
+model UserAddress {
+  id        String   @id @default(uuid())
+  label     String
+  line1     String
+  line2     String?
+  city      String
+  state     String
+  pincode   String
+  isDefault Boolean  @default(false)
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Salon {
+  id          String       @id @default(uuid())
+  name        String
+  description String?
+  address     String
+  latitude    Float
+  longitude   Float
+  imageUrl    String?
+  isVerified  Boolean      @default(false)
+  status      SalonStatus  @default(PENDING)
+  ownerId     String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  bookings    Booking[]
+  employees   Employee[]
+  reviews     Review[]
+  owner       User         @relation(fields: [ownerId], references: [id])
+  images      SalonImage[]
+  services    Service[]
+}
+
+model SalonImage {
+  id        String   @id @default(uuid())
+  url       String
+  caption   String?
+  salonId   String
+  createdAt DateTime @default(now())
+  salon     Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+
+  @@index([salonId])
+}
+
+model Employee {
+  id          String    @id @default(uuid())
+  name        String
+  phone       String?
+  email       String?
+  roleTitle   String?
+  specialties String?
+  isActive    Boolean   @default(true)
+  salonId     String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  bookings    Booking[]
+  salon       Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade)
+
+  @@index([salonId, isActive])
+}
+
+model Service {
+  id           String           @id @default(uuid())
+  name         String
+  description  String?
+  price        Int
+  durationMin  Int
+  salonId      String
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  bookings     Booking[]
+  bookingItems BookingService[]
+  salon        Salon            @relation(fields: [salonId], references: [id])
+}
+
+model Booking {
+  id                        String           @id @default(uuid())
+  scheduledAt               DateTime
+  address                   String
+  instructions              String?
+  totalAmount               Int
+  status                    BookingStatus    @default(PENDING)
+  cashConfirmationCodeHash  String?
+  cashConfirmationExpiresAt DateTime?
+  disputeStatus             DisputeStatus    @default(NONE)
+  disputeNote               String?
+  disputeResolvedAt         DateTime?
+  clientId                  String
+  salonId                   String
+  employeeId                String?
+  serviceId                 String
+  createdAt                 DateTime         @default(now())
+  updatedAt                 DateTime         @updatedAt
+  client                    User             @relation(fields: [clientId], references: [id])
+  employee                  Employee?        @relation(fields: [employeeId], references: [id])
+  salon                     Salon            @relation(fields: [salonId], references: [id])
+  service                   Service          @relation(fields: [serviceId], references: [id])
+  services                  BookingService[]
+  slot                      BookingSlot?
+  payment                   Payment?
+  review                    Review?
+}
+
+model BookingSlot {
+  id          String   @id @default(uuid())
+  salonId     String
+  scheduledAt DateTime
+  bookingId   String   @unique
+  createdAt   DateTime @default(now())
+  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@unique([salonId, scheduledAt])
+  @@index([bookingId])
+}
+
+model BookingService {
+  id        String  @id @default(uuid())
+  bookingId String
+  serviceId String
+  price     Int
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  service   Service @relation(fields: [serviceId], references: [id])
+
+  @@unique([bookingId, serviceId])
+  @@index([serviceId])
+}
+
+model Payment {
+  id               String           @id @default(uuid())
+  amount           Int
+  currency         String           @default("INR")
+  status           PaymentStatus    @default(CREATED)
+  method           PaymentMethod?
+  platformFee      Int              @default(0)
+  merchantAmount   Int              @default(0)
+  commissionRate   Int              @default(10)
+  invoiceNumber    String?          @unique
+  paidAt           DateTime?
+  cashRemark       String?
+  collectedById    String?
+  settlementStatus SettlementStatus @default(PENDING)
+  razorpayOrder    String?          @unique
+  razorpayPayment  String?          @unique
+  bookingId        String           @unique
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  booking          Booking          @relation(fields: [bookingId], references: [id])
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  rating    Int
+  comment   String?
+  clientId  String
+  salonId   String
+  bookingId String   @unique
+  createdAt DateTime @default(now())
+  booking   Booking  @relation(fields: [bookingId], references: [id])
+  client    User     @relation(fields: [clientId], references: [id])
+  salon     Salon    @relation(fields: [salonId], references: [id])
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  type      NotificationType
+  title     String
+  message   String
+  readAt    DateTime?
+  userId    String
+  bookingId String?
+  paymentId String?
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@index([bookingId])
+  @@index([paymentId])
+}
+
+model AuditLog {
+  id        String    @id @default(uuid())
+  actorId   String?
+  actorRole UserRole?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime  @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([entity, entityId])
+  @@index([action, createdAt])
+}
+
+model SupportTicket {
+  id         String              @id @default(uuid())
+  subject    String
+  status     SupportTicketStatus @default(PENDING)
+  clientId   String
+  adminId    String?
+  acceptedAt DateTime?
+  closedAt   DateTime?
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+  messages   SupportMessage[]
+  admin      User?               @relation("SupportAdmin", fields: [adminId], references: [id])
+  client     User                @relation("SupportClient", fields: [clientId], references: [id])
+
+  @@index([clientId, createdAt])
+  @@index([adminId, createdAt])
+  @@index([status, createdAt])
+}
+
+model SupportMessage {
+  id        String        @id @default(uuid())
+  ticketId  String
+  senderId  String
+  body      String
+  createdAt DateTime      @default(now())
+  sender    User          @relation(fields: [senderId], references: [id])
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@index([senderId, createdAt])
+}
+
+model MembershipPlan {
+  id               String           @id @default(uuid())
+  code             String           @unique
+  name             String
+  monthlyPrice     Int
+  servicesPerMonth Int
+  description      String
+  benefits         String[]
+  isActive         Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  memberships      UserMembership[]
+}
+
+model UserMembership {
+  id                String         @id @default(uuid())
+  userId            String
+  planId            String
+  startedAt         DateTime       @default(now())
+  expiresAt         DateTime
+  remainingServices Int
+  isActive          Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  plan              MembershipPlan @relation(fields: [planId], references: [id])
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@index([expiresAt])
+}
+
+model IpBlock {
+  id           String   @id @default(uuid())
+  ip           String   @unique
+  reason       String?
+  blockedUntil DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([blockedUntil])
+}
+
+model SecurityAttempt {
+  id             String    @id @default(uuid())
+  key            String    @unique
+  count          Int       @default(0)
+  firstAttemptAt DateTime
+  lockedUntil    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([lockedUntil])
+  @@index([firstAttemptAt])
+}
+
 enum UserRole {
   CLIENT
   OWNER
@@ -65,322 +383,4 @@ enum SupportTicketStatus {
   PENDING
   ACCEPTED
   CLOSED
-}
-
-model User {
-  id        String    @id @default(uuid())
-  name      String?
-  phone     String    @unique
-  email     String?   @unique
-  referralCode String? @unique
-  password  String?
-  profilePhotoUrl String?
-  sessionVersion Int      @default(0)
-  isSuspended Boolean     @default(false)
-  deletedAt DateTime?
-  emailVerified Boolean   @default(false)
-  verificationCodeHash String?
-  verificationExpiresAt DateTime?
-  resetCodeHash String?
-  resetExpiresAt DateTime?
-  role      UserRole  @default(CLIENT)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  salons    Salon[]
-  bookings  Booking[]
-  reviews   Review[]
-  addresses UserAddress[]
-  notifications Notification[]
-  supportTickets SupportTicket[] @relation("SupportClient")
-  assignedSupportTickets SupportTicket[] @relation("SupportAdmin")
-  supportMessages SupportMessage[]
-  memberships UserMembership[]
-}
-
-model UserAddress {
-  id        String   @id @default(uuid())
-  label     String
-  line1     String
-  line2     String?
-  city      String
-  state     String
-  pincode   String
-  isDefault Boolean  @default(false)
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([userId])
-}
-
-model Salon {
-  id          String    @id @default(uuid())
-  name        String
-  description String?
-  address     String
-  latitude    Float
-  longitude   Float
-  imageUrl    String?
-  isVerified  Boolean   @default(false)
-  status      SalonStatus @default(PENDING)
-  ownerId     String
-  owner       User      @relation(fields: [ownerId], references: [id])
-  services    Service[]
-  employees   Employee[]
-  images      SalonImage[]
-  bookings    Booking[]
-  reviews     Review[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-}
-
-model SalonImage {
-  id        String   @id @default(uuid())
-  url       String
-  caption   String?
-  salonId   String
-  salon     Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-
-  @@index([salonId])
-}
-
-model Employee {
-  id        String    @id @default(uuid())
-  name      String
-  phone     String?
-  email     String?
-  roleTitle String?
-  specialties String?
-  isActive  Boolean   @default(true)
-  salonId   String
-  salon     Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade)
-  bookings  Booking[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  @@index([salonId, isActive])
-}
-
-model Service {
-  id          String    @id @default(uuid())
-  name        String
-  description String?
-  price       Int
-  durationMin Int
-  salonId     String
-  salon       Salon     @relation(fields: [salonId], references: [id])
-  bookings    Booking[]
-  bookingItems BookingService[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-}
-
-model Booking {
-  id          String        @id @default(uuid())
-  scheduledAt DateTime
-  address     String
-  instructions String?
-  totalAmount Int
-  status      BookingStatus @default(PENDING)
-  cashConfirmationCodeHash String?
-  cashConfirmationExpiresAt DateTime?
-  disputeStatus DisputeStatus @default(NONE)
-  disputeNote String?
-  disputeResolvedAt DateTime?
-  clientId    String
-  client      User          @relation(fields: [clientId], references: [id])
-  salonId     String
-  salon       Salon         @relation(fields: [salonId], references: [id])
-  employeeId  String?
-  employee    Employee?     @relation(fields: [employeeId], references: [id])
-  serviceId   String
-  service     Service       @relation(fields: [serviceId], references: [id])
-  services    BookingService[]
-  payment     Payment?
-  review      Review?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  slot         BookingSlot?
-}
-
-model BookingSlot {
-  id          String   @id @default(uuid())
-  salonId     String
-  scheduledAt DateTime
-  bookingId   String   @unique
-  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-
-  @@unique([salonId, scheduledAt])
-  @@index([bookingId])
-}
-
-model BookingService {
-  id        String  @id @default(uuid())
-  bookingId String
-  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  serviceId String
-  service   Service @relation(fields: [serviceId], references: [id])
-  price     Int
-
-  @@unique([bookingId, serviceId])
-  @@index([serviceId])
-}
-
-model Payment {
-  id             String        @id @default(uuid())
-  amount         Int
-  currency       String        @default("INR")
-  status         PaymentStatus @default(CREATED)
-  method         PaymentMethod?
-  platformFee    Int           @default(0)
-  merchantAmount Int           @default(0)
-  commissionRate Int           @default(10)
-  invoiceNumber  String?       @unique
-  paidAt         DateTime?
-  cashRemark     String?
-  collectedById  String?
-  settlementStatus SettlementStatus @default(PENDING)
-  razorpayOrder  String?       @unique
-  razorpayPayment String?      @unique
-  bookingId      String        @unique
-  booking        Booking       @relation(fields: [bookingId], references: [id])
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-}
-
-model Review {
-  id        String   @id @default(uuid())
-  rating    Int
-  comment   String?
-  clientId  String
-  client    User     @relation(fields: [clientId], references: [id])
-  salonId   String
-  salon     Salon    @relation(fields: [salonId], references: [id])
-  bookingId String   @unique
-  booking   Booking  @relation(fields: [bookingId], references: [id])
-  createdAt DateTime @default(now())
-}
-
-model Notification {
-  id        String           @id @default(uuid())
-  type      NotificationType
-  title     String
-  message   String
-  readAt    DateTime?
-  userId    String
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  bookingId String?
-  paymentId String?
-  createdAt DateTime         @default(now())
-
-  @@index([userId, readAt, createdAt])
-  @@index([bookingId])
-  @@index([paymentId])
-}
-
-model AuditLog {
-  id        String   @id @default(uuid())
-  actorId   String?
-  actorRole UserRole?
-  action    String
-  entity    String
-  entityId  String?
-  metadata  Json?
-  ipAddress String?
-  userAgent String?
-  createdAt DateTime @default(now())
-
-  @@index([actorId, createdAt])
-  @@index([entity, entityId])
-  @@index([action, createdAt])
-}
-
-model SupportTicket {
-  id          String              @id @default(uuid())
-  subject     String
-  status      SupportTicketStatus @default(PENDING)
-  clientId    String
-  client      User                @relation("SupportClient", fields: [clientId], references: [id])
-  adminId     String?
-  admin       User?               @relation("SupportAdmin", fields: [adminId], references: [id])
-  messages    SupportMessage[]
-  acceptedAt  DateTime?
-  closedAt    DateTime?
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
-
-  @@index([clientId, createdAt])
-  @@index([adminId, createdAt])
-  @@index([status, createdAt])
-}
-
-model SupportMessage {
-  id        String        @id @default(uuid())
-  ticketId  String
-  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  senderId  String
-  sender    User          @relation(fields: [senderId], references: [id])
-  body      String
-  createdAt DateTime      @default(now())
-
-  @@index([ticketId, createdAt])
-  @@index([senderId, createdAt])
-}
-
-model MembershipPlan {
-  id               String   @id @default(uuid())
-  code             String   @unique
-  name             String
-  monthlyPrice     Int
-  servicesPerMonth Int
-  description      String
-  benefits         String[]
-  isActive         Boolean  @default(true)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  memberships      UserMembership[]
-}
-
-model UserMembership {
-  id                String         @id @default(uuid())
-  userId            String
-  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  planId            String
-  plan              MembershipPlan @relation(fields: [planId], references: [id])
-  startedAt         DateTime       @default(now())
-  expiresAt         DateTime
-  remainingServices Int
-  isActive          Boolean        @default(true)
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-
-  @@index([userId, isActive])
-  @@index([expiresAt])
-}
-
-model IpBlock {
-  id           String   @id @default(uuid())
-  ip           String   @unique
-  reason       String?
-  blockedUntil DateTime
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  @@index([blockedUntil])
-}
-
-model SecurityAttempt {
-  id             String    @id @default(uuid())
-  key            String    @unique
-  count          Int       @default(0)
-  firstAttemptAt DateTime
-  lockedUntil    DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  @@index([lockedUntil])
-  @@index([firstAttemptAt])
 }
