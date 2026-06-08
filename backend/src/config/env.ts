@@ -24,6 +24,7 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
   EMAIL_HOST: z.string().optional(),
   EMAIL_PORT: z.coerce.number().optional(),
   EMAIL_USER: z.string().optional(),
@@ -37,8 +38,11 @@ const envSchema = z.object({
   if (env.JWT_SECRET.length < 32) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["JWT_SECRET"], message: "JWT_SECRET must be at least 32 characters in production" });
   }
-  if (!((env.SMTP_HOST || env.EMAIL_HOST) && (env.SMTP_USER || env.EMAIL_USER) && (env.SMTP_PASS || env.EMAIL_PASS))) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["SMTP_HOST"], message: "SMTP configuration is required in production" });
+  if (
+    !env.RESEND_API_KEY
+    && !((env.SMTP_HOST || env.EMAIL_HOST) && (env.SMTP_USER || env.EMAIL_USER) && (env.SMTP_PASS || env.EMAIL_PASS))
+  ) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["SMTP_HOST"], message: "Email configuration is required in production" });
   }
 });
 
@@ -51,5 +55,6 @@ export const env = {
   SMTP_USER: parsedEnv.SMTP_USER ?? parsedEnv.EMAIL_USER,
   SMTP_PASS: parsedEnv.SMTP_PASS ?? parsedEnv.EMAIL_PASS,
   SMTP_FROM: parsedEnv.SMTP_FROM ?? parsedEnv.EMAIL_FROM ?? "Salon At Home <no-reply@salonathome.local>",
+  RESEND_API_KEY: parsedEnv.RESEND_API_KEY,
   CORS_ORIGINS: (parsedEnv.CORS_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean),
 };

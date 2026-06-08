@@ -18,15 +18,53 @@ const transporter = env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS
     })
   : null;
 
-export async function sendAuthCode(email: string, code: string, purpose: "verify" | "reset") {
-  if (!transporter) {
-    if (env.OTP_BYPASS_CODE) return;
-    throw new HttpError(503, "SMTP is not configured");
+type MailData = {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+};
+
+async function sendMail({ to, subject, text, html }: MailData) {
+  if (env.RESEND_API_KEY) {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: env.SMTP_FROM,
+        to,
+        subject,
+        text,
+        html,
+      }),
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`Resend email failed with ${response.status}: ${body}`);
+    }
+    return;
   }
 
-  const isVerification = purpose === "verify";
+  if (!transporter) {
+    if (env.OTP_BYPASS_CODE) return;
+    throw new HttpError(503, "Email is not configured");
+  }
+
   await transporter.sendMail({
     from: env.SMTP_FROM,
+    to,
+    subject,
+    text,
+    html,
+  });
+}
+
+export async function sendAuthCode(email: string, code: string, purpose: "verify" | "reset") {
+  const isVerification = purpose === "verify";
+  await sendMail({
     to: email,
     subject: isVerification ? "Verify your Salon At Home account" : "Reset your Salon At Home password",
     text: `Your Salon At Home ${isVerification ? "verification" : "password reset"} code is ${code}. It expires in 10 minutes.`,
@@ -64,7 +102,7 @@ function formatDate(value?: Date | string | null) {
 }
 
 export async function sendPaymentInvoiceEmail(invoice: InvoiceEmailData) {
-  if (!transporter) return false;
+  if (!env.RESEND_API_KEY && !transporter) return false;
 
   const serviceList = invoice.serviceNames.length ? invoice.serviceNames.join(", ") : "Salon service";
   const subject = `Salon At Home invoice ${invoice.invoiceNumber ?? invoice.bookingId.slice(0, 8).toUpperCase()}`;
@@ -106,8 +144,7 @@ export async function sendPaymentInvoiceEmail(invoice: InvoiceEmailData) {
     </div>
   `;
 
-  await transporter.sendMail({
-    from: env.SMTP_FROM,
+  await sendMail({
     to: invoice.to,
     subject,
     text,
@@ -125,7 +162,7 @@ type SafetyIssueEmailData = {
 };
 
 export async function sendSafetyIssueEmail(report: SafetyIssueEmailData) {
-  if (!transporter) throw new HttpError(503, "SMTP is not configured");
+  if (!env.RESEND_API_KEY && !transporter) throw new HttpError(503, "Email is not configured");
 
   const subject = "Salon At Home safety issue reported";
   const text = [
@@ -156,8 +193,7 @@ export async function sendSafetyIssueEmail(report: SafetyIssueEmailData) {
     </div>
   `;
 
-  await transporter.sendMail({
-    from: env.SMTP_FROM,
+  await sendMail({
     to: "pathakayush8194@gmail.com",
     subject,
     text,
