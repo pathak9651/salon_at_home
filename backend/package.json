@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "deploy:backend": "npm install --include=dev && npm run prisma:generate && npm run build",
+    "deploy:backend": "npm install --include=dev && npm run prisma:generate && npm run build && npm run prisma:push && npm run seed:admin",
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
