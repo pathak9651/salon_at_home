@@ -117,32 +117,32 @@ export const globalLimiter = rateLimit({
 export const authLimiter = rateLimit({
   ...standardOptions,
   windowMs: 15 * 60 * 1000,
-  limit: 15,
+  limit: 30,
 });
 
 export const loginLimiter = rateLimit({
   ...standardOptions,
   windowMs: 15 * 60 * 1000,
-  limit: 10,
+  limit: 30,
   skipSuccessfulRequests: true,
 });
 
 export const otpLimiter = rateLimit({
   ...standardOptions,
   windowMs: 15 * 60 * 1000,
-  limit: 5,
+  limit: 25,
 });
 
 export const bookingLimiter = rateLimit({
   ...standardOptions,
   windowMs: 10 * 60 * 1000,
-  limit: 20,
+  limit: 30,
 });
 
 export const paymentLimiter = rateLimit({
   ...standardOptions,
   windowMs: 10 * 60 * 1000,
-  limit: 12,
+  limit: 30,
 });
 
 export const adminWriteLimiter = rateLimit({
@@ -154,5 +154,5 @@ export const adminWriteLimiter = rateLimit({
 export const uploadLimiter = rateLimit({
   ...standardOptions,
   windowMs: 15 * 60 * 1000,
-  limit: 20,
+  limit: 30,
 });
