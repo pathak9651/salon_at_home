@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { HttpError } from "../utils/http-error";
 
-const REQUEST_TIMEOUT_MS = 15_000;
+const REQUEST_TIMEOUT_MS = 30_000;
 
 export function requestTimeout(req: Request, res: Response, next: NextFunction) {
   req.setTimeout(REQUEST_TIMEOUT_MS, () => {

@@ -52,6 +52,16 @@ async function hashCode(code: string) {
   return bcrypt.hash(code, 10);
 }
 
+async function trySendAuthCode(email: string, code: string, purpose: "verify" | "reset") {
+  try {
+    await sendAuthCode(email, code, purpose);
+    return true;
+  } catch (error) {
+    console.error(`Auth ${purpose} email failed for ${email}`, error);
+    return false;
+  }
+}
+
 router.use(["/signup", "/login"], authLimiter);
 router.use("/login", loginLimiter);
 router.use(["/verify-account", "/resend-verification", "/forgot-password", "/reset-password"], otpLimiter);
@@ -81,7 +91,13 @@ router.post("/signup", asyncHandler(async (req, res) => {
       verificationExpiresAt: new Date(Date.now() + CODE_TTL_MS),
     },
   });
-  await sendAuthCode(data.email, code, "verify");
+  const emailSent = await trySendAuthCode(data.email, code, "verify");
+  if (!emailSent) {
+    return res.status(202).json({
+      message: "Account created, but the verification email could not be sent. Please try resending the code in a moment.",
+      email: data.email,
+    });
+  }
   res.status(201).json({ message: "Account created. Verify your email to continue.", email: data.email });
 }));
 
@@ -115,7 +131,9 @@ router.post("/resend-verification", asyncHandler(async (req, res) => {
   if (!user || user.emailVerified) return res.json({ message: "If verification is required, a code has been sent." });
   const code = createCode();
   await prisma.user.update({ where: { id: user.id }, data: { verificationCodeHash: await hashCode(code), verificationExpiresAt: new Date(Date.now() + CODE_TTL_MS) } });
-  await sendAuthCode(email, code, "verify");
+  if (!(await trySendAuthCode(email, code, "verify"))) {
+    throw new HttpError(503, "Verification email could not be sent. Please try again later.");
+  }
   res.json({ message: "Verification code sent." });
 }));
 
@@ -151,7 +169,9 @@ router.post("/forgot-password", asyncHandler(async (req, res) => {
   if (!user?.email) return res.json({ message: "If the account exists, a reset code has been sent." });
   const code = createCode();
   await prisma.user.update({ where: { id: user.id }, data: { resetCodeHash: await hashCode(code), resetExpiresAt: new Date(Date.now() + CODE_TTL_MS) } });
-  await sendAuthCode(user.email, code, "reset");
+  if (!(await trySendAuthCode(user.email, code, "reset"))) {
+    throw new HttpError(503, "Password reset email could not be sent. Please try again later.");
+  }
   res.json({ message: "If the account exists, a reset code has been sent.", email: user.email });
 }));
 
