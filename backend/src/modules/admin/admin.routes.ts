@@ -279,4 +279,40 @@ router.patch("/payments/:id/commission", asyncHandler(async (req, res) => {
   res.json(updated);
 }));
 
+router.get("/settings", asyncHandler(async (_req, res) => {
+  const settings = await prisma.systemSetting.findMany();
+  const hasCommission = settings.some((s) => s.key === "platform_commission_percent");
+  if (!hasCommission) {
+    const defaultComm = await prisma.systemSetting.create({
+      data: { key: "platform_commission_percent", value: "0" }
+    }).catch(() => null);
+    if (defaultComm) {
+      settings.push(defaultComm);
+    }
+  }
+  res.json(settings);
+}));
+
+router.patch("/settings", asyncHandler(async (req, res) => {
+  const data = z.object({
+    platform_commission_percent: z.coerce.number().int().min(0).max(100)
+  }).parse(req.body);
+
+  const updatedSetting = await prisma.systemSetting.upsert({
+    where: { key: "platform_commission_percent" },
+    update: { value: String(data.platform_commission_percent) },
+    create: { key: "platform_commission_percent", value: String(data.platform_commission_percent) },
+  });
+
+  await auditLog({
+    req,
+    action: "GLOBAL_COMMISSION_UPDATED",
+    entity: "SystemSetting",
+    entityId: "platform_commission_percent",
+    metadata: { value: data.platform_commission_percent }
+  });
+
+  res.json(updatedSetting);
+}));
+
 export default router;

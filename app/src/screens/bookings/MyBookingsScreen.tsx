@@ -1,7 +1,7 @@
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, NativeModules, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Linking, NativeModules, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { apiRequest } from "../../api/client";
 import { ThemeColors, useTheme } from "../../utils/theme";
 import { useBackHandler } from "../../hooks/useBackHandler";
@@ -105,14 +105,54 @@ export function MyBookingsScreen({ token }: { token: string }) {
     setError("");
     setNotice("");
     try {
-      if (!NativeModules.RazorpayCheckout) {
-        throw new Error("Razorpay is not available in this app build. Create a development or release build after installing react-native-razorpay; Expo Go cannot open Razorpay checkout.");
-      }
       const paymentOrder = await apiRequest<PaymentOrderResponse>("/payments/order", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: JSON.stringify({ bookingId: booking.id }),
       });
+
+      if (!NativeModules.RazorpayCheckout) {
+        // Fallback for Expo Go or when Razorpay native checkout is not linked
+        const webUrl = `https://api.razorpay.com/v1/checkout/hosted?key_id=${paymentOrder.keyId}&order_id=${paymentOrder.order.id}&prefill[name]=${encodeURIComponent(booking.client?.name || "")}&prefill[email]=${encodeURIComponent(booking.client?.email || "")}&prefill[contact]=${encodeURIComponent(booking.client?.phone || "")}`;
+        await Linking.openURL(webUrl);
+
+        Alert.alert(
+          "Payment Opened",
+          "We have opened the payment gateway in your browser. Complete the payment in the browser, then tap 'Verify Payment' below.",
+          [
+            {
+              text: "Cancel",
+              style: "cancel",
+            },
+            {
+              text: "Verify Payment",
+              onPress: async () => {
+                setSaving(true);
+                setError("");
+                try {
+                  const statusRes = await apiRequest<Payment>("/payments/check-order-status", {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ bookingId: booking.id }),
+                  });
+                  if (statusRes.status === "PAID") {
+                    setNotice("Payment successful. Invoice generated.");
+                    await loadBookings();
+                  } else {
+                    setError("We could not verify your payment yet. Please complete the payment in the browser and try again.");
+                  }
+                } catch (verifyError) {
+                  setError(verifyError instanceof Error ? verifyError.message : "Verification failed");
+                } finally {
+                  setSaving(false);
+                }
+              }
+            }
+          ]
+        );
+        return;
+      }
+
       const RazorpayCheckout = (await import("react-native-razorpay")).default;
       if (!RazorpayCheckout?.open) {
         throw new Error("Razorpay checkout is not linked in this app build. Rebuild the native app and try again.");

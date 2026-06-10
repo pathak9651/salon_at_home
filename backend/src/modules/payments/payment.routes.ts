@@ -27,13 +27,28 @@ const paymentInclude = {
     },
   },
 };
+export async function getPlatformCommissionRate(): Promise<number> {
+  try {
+    const setting = await prisma.systemSetting.findUnique({ where: { key: "platform_commission_percent" } });
+    if (setting) return parseInt(setting.value, 10);
 
-function splitAmount(amount: number) {
-  const platformFee = Math.round((amount * env.PLATFORM_COMMISSION_PERCENT) / 100);
+    // Auto-seed to 0% (free of cost) if not present
+    const created = await prisma.systemSetting.create({
+      data: { key: "platform_commission_percent", value: "0" }
+    }).catch(() => null);
+
+    return created ? 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function splitAmount(amount: number, commissionRate: number) {
+  const platformFee = Math.round((amount * commissionRate) / 100);
   return {
     platformFee,
     merchantAmount: amount - platformFee,
-    commissionRate: env.PLATFORM_COMMISSION_PERCENT,
+    commissionRate,
   };
 }
 
@@ -93,6 +108,7 @@ async function markPaymentPaidOnline(bookingId: string, razorpayPaymentId: strin
   }
 
   const admins = await adminIds();
+  const commissionRate = await getPlatformCommissionRate();
   return prisma.$transaction(async (tx) => {
     await tx.booking.update({
       where: { id: bookingId },
@@ -100,7 +116,7 @@ async function markPaymentPaidOnline(bookingId: string, razorpayPaymentId: strin
     });
     const updated = await tx.payment.update({
       where: { bookingId },
-      data: { status: "PAID", method: "ONLINE", razorpayPayment: razorpayPaymentId, invoiceNumber: invoiceNumber(), paidAt: new Date(), ...splitAmount(existing.amount) },
+      data: { status: "PAID", method: "ONLINE", razorpayPayment: razorpayPaymentId, invoiceNumber: invoiceNumber(), paidAt: new Date(), ...splitAmount(existing.amount, commissionRate) },
       include: paymentInclude,
     });
     await createNotifications([
@@ -130,6 +146,8 @@ async function markPaymentPaidOnline(bookingId: string, razorpayPaymentId: strin
       })),
     ], tx);
     return updated;
+  }, {
+    timeout: 15000
   });
 }
 
@@ -176,6 +194,11 @@ router.get("/", asyncHandler(async (req, res) => {
   }));
 }));
 
+router.get("/rate", asyncHandler(async (_req, res) => {
+  const rate = await getPlatformCommissionRate();
+  res.json({ commissionRate: rate });
+}));
+
 router.get("/:id/invoice", asyncHandler(async (req, res) => {
   const payment = await prisma.payment.findFirst({
     where: { id: String(req.params.id), status: "PAID", ...paymentAccessWhere(req.user!) },
@@ -207,12 +230,13 @@ router.post("/order", asyncHandler(async (req, res) => {
   if (booking.payment?.status === "PAID") throw new HttpError(400, "This booking is already closed for payment");
   if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) throw new HttpError(503, "Payment provider not configured");
   const razorpay = new Razorpay({ key_id: env.RAZORPAY_KEY_ID, key_secret: env.RAZORPAY_KEY_SECRET });
-  const split = splitAmount(booking.totalAmount);
+  const commissionRate = await getPlatformCommissionRate();
+  const split = splitAmount(booking.totalAmount, commissionRate);
   const order = await razorpay.orders.create({
     amount: booking.totalAmount * 100,
     currency: "INR",
     receipt: `booking_${booking.id.slice(0, 24)}`,
-    notes: { bookingId: booking.id, commissionPercent: String(env.PLATFORM_COMMISSION_PERCENT) },
+    notes: { bookingId: booking.id, commissionPercent: String(commissionRate) },
   });
   const payment = await prisma.payment.upsert({
     where: { bookingId },
@@ -281,7 +305,8 @@ router.post("/cash", asyncHandler(async (req, res) => {
   }
   if (booking.payment?.status === "PAID") throw new HttpError(400, "This booking is already closed for payment");
 
-  const split = splitAmount(booking.totalAmount);
+  const commissionRate = await getPlatformCommissionRate();
+  const split = splitAmount(booking.totalAmount, commissionRate);
   const admins = await adminIds();
   const payment = await prisma.$transaction(async (tx) => {
     const cashPayment = await tx.payment.upsert({
@@ -334,6 +359,8 @@ router.post("/cash", asyncHandler(async (req, res) => {
       })),
     ], tx);
     return cashPayment;
+  }, {
+    timeout: 15000
   });
   await auditLog({ req, action: "CASH_PAYMENT_REQUESTED", entity: "Payment", entityId: payment.id, metadata: { bookingId: data.bookingId } });
   res.status(201).json(payment);
@@ -388,9 +415,42 @@ router.post("/cash/confirm", asyncHandler(async (req, res) => {
       })),
     ], tx);
     return cashPayment;
+  }, {
+    timeout: 15000
   });
   await auditLog({ req, action: "CASH_PAYMENT_CONFIRMED", entity: "Payment", entityId: payment.id, metadata: { bookingId: data.bookingId } });
   res.status(201).json(payment);
+}));
+
+router.post("/check-order-status", asyncHandler(async (req, res) => {
+  const { bookingId } = z.object({ bookingId: z.string() }).parse(req.body);
+  const payment = await prisma.payment.findUnique({
+    where: { bookingId },
+    include: { booking: true },
+  });
+  if (!payment) throw new HttpError(404, "Payment record not found");
+  if (payment.status === "PAID") {
+    res.json(payment);
+    return;
+  }
+  if (!payment.razorpayOrder) {
+    throw new HttpError(400, "No Razorpay order associated with this payment");
+  }
+
+  if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) throw new HttpError(503, "Payment provider not configured");
+  const razorpay = new Razorpay({ key_id: env.RAZORPAY_KEY_ID, key_secret: env.RAZORPAY_KEY_SECRET });
+
+  const rpPayments = await razorpay.orders.fetchPayments(payment.razorpayOrder) as { items: Array<{ id: string; status: string }> };
+  const successfulPayment = rpPayments.items.find((p) => p.status === "captured");
+  if (successfulPayment) {
+    const paidPayment = await markPaymentPaidOnline(bookingId, successfulPayment.id);
+    await sendOnlinePaymentNotifications(paidPayment);
+    await auditLog({ req, action: "PAYMENT_STATUS_CHECKED_SUCCESS", entity: "Payment", entityId: paidPayment.id, metadata: { razorpayPaymentId: successfulPayment.id } });
+    res.json(paidPayment);
+    return;
+  }
+
+  res.json(payment);
 }));
 
 export default router;

@@ -325,6 +325,13 @@ model SecurityAttempt {
   @@index([firstAttemptAt])
 }
 
+model SystemSetting {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 enum UserRole {
   CLIENT
   OWNER

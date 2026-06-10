@@ -105,6 +105,8 @@ router.post("/", requireRole(UserRole.CLIENT), asyncHandler(async (req, res) => 
       },
     ], tx);
     return created;
+  }, {
+    timeout: 15000
   }).catch((error: unknown) => {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       throw new HttpError(409, "This salon already has a booking at the selected time");
@@ -162,6 +164,8 @@ router.patch("/:id/reschedule", asyncHandler(async (req, res) => {
       },
     ], tx);
     return nextBooking;
+  }, {
+    timeout: 15000
   }).catch((error: unknown) => {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       throw new HttpError(409, "This salon already has a booking at the selected time");
@@ -257,6 +261,8 @@ router.patch("/:id/status", asyncHandler(async (req, res) => {
       ], tx);
     }
     return nextBooking;
+  }, {
+    timeout: 15000
   });
   res.json(shapeBookingForUser(updated, req.user!.role));
 }));

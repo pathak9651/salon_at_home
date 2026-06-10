@@ -28,8 +28,10 @@ export function AdminPaymentsScreen({ token }: { token: string }) {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [globalCommissionRate, setGlobalCommissionRate] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [updatingGlobal, setUpdatingGlobal] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -40,11 +42,36 @@ export function AdminPaymentsScreen({ token }: { token: string }) {
     setLoading(true);
     setError("");
     try {
-      setPayments(await apiRequest<Payment[]>("/admin/payments", { headers: { Authorization: `Bearer ${token}` } }));
+      const [nextPayments, settings] = await Promise.all([
+        apiRequest<Payment[]>("/admin/payments", { headers: { Authorization: `Bearer ${token}` } }),
+        apiRequest<Array<{ key: string, value: string }>>("/admin/settings", { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      setPayments(nextPayments);
+      const commissionRateSetting = settings.find((s) => s.key === "platform_commission_percent");
+      if (commissionRateSetting) {
+        setGlobalCommissionRate(parseInt(commissionRateSetting.value, 10));
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load payments");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function updateGlobalCommission(rate: number) {
+    setUpdatingGlobal(true);
+    setError("");
+    try {
+      await apiRequest("/admin/settings", {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ platform_commission_percent: rate }),
+      });
+      setGlobalCommissionRate(rate);
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "Could not update global commission");
+    } finally {
+      setUpdatingGlobal(false);
     }
   }
 
@@ -84,6 +111,27 @@ export function AdminPaymentsScreen({ token }: { token: string }) {
         <Metric styles={styles} label="ONLINE PAYMENTS" value={String(onlineCount)} />
         <Metric styles={styles} label="CASH PAYMENTS" value={String(cashCount)} />
         <Metric styles={styles} label="TRANSACTIONS" value={String(payments.length)} />
+      </View>
+
+      <Text style={styles.section}>GLOBAL PLATFORM BROKERAGE CONFIG</Text>
+      <View style={[styles.card, { paddingVertical: 18 }]}>
+        <Text style={[styles.detail, { marginBottom: 12, fontSize: 13, color: colors.text }]}>
+          Current global brokerage rate: <Text style={{ color: colors.cyan, fontWeight: "900" }}>{globalCommissionRate}%</Text>
+        </Text>
+        <View style={styles.actions}>
+          {[0, 5, 10, 15, 20].map((rate) => (
+            <TouchableOpacity
+              disabled={updatingGlobal || globalCommissionRate === rate}
+              onPress={() => void updateGlobalCommission(rate)}
+              style={[styles.actionButton, globalCommissionRate === rate && styles.actionActive]}
+              key={rate}
+            >
+              <Text style={globalCommissionRate === rate ? styles.actionActiveText : styles.actionText}>
+                {rate}% {rate === 0 ? "(Free)" : ""}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
       <Text style={styles.section}>TRANSACTION RECORDS</Text>

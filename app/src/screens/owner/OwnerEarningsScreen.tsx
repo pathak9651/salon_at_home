@@ -37,6 +37,7 @@ export function OwnerEarningsScreen({ token }: { token: string }) {
   const styles = createStyles(colors);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [globalCommissionRate, setGlobalCommissionRate] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -48,12 +49,14 @@ export function OwnerEarningsScreen({ token }: { token: string }) {
     setLoading(true);
     setError("");
     try {
-      const [nextPayments, nextBookings] = await Promise.all([
+      const [nextPayments, nextBookings, rateResponse] = await Promise.all([
         apiRequest<Payment[]>("/payments", { headers: { Authorization: `Bearer ${token}` } }),
         apiRequest<Booking[]>("/bookings", { headers: { Authorization: `Bearer ${token}` } }),
+        apiRequest<{ commissionRate: number }>("/payments/rate", { headers: { Authorization: `Bearer ${token}` } }).catch(() => ({ commissionRate: 0 })),
       ]);
       setPayments(nextPayments);
       setBookings(nextBookings);
+      setGlobalCommissionRate(rateResponse.commissionRate);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load earnings");
     } finally {
@@ -75,6 +78,15 @@ export function OwnerEarningsScreen({ token }: { token: string }) {
     <ScrollView contentContainerStyle={styles.page}>
       <ScreenHeader eyebrow="PARTNER CONSOLE // EARNINGS" title="Earnings" subtitle="Track paid bookings, transactions, merchant earnings, and platform brokerage." />
       {!!error && <Text style={styles.error}>{error}</Text>}
+
+      <View style={[styles.card, { marginBottom: 15, paddingVertical: 12, borderLeftWidth: 4, borderLeftColor: colors.cyan }]}>
+        <Text style={{ color: colors.text, fontSize: 13, fontWeight: "800" }}>
+          Platform Brokerage Rate: <Text style={{ color: colors.cyan, fontWeight: "900" }}>{globalCommissionRate}%</Text> {globalCommissionRate === 0 ? " (Free of cost)" : ""}
+        </Text>
+        <Text style={{ color: colors.muted, fontSize: 10, marginTop: 4 }}>
+          This rate applies to all new bookings. Past bookings split at their respective rates.
+        </Text>
+      </View>
 
       <View style={styles.grid}>
         <Metric styles={styles} label="MERCHANT EARNINGS" value={`INR ${merchantEarnings}`} />
