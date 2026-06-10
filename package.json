@@ -11,7 +11,7 @@
     "dev:backend": "npm run dev --workspace backend",
     "dev:app": "npm run start --workspace app",
     "dev:admin": "npm run dev --workspace admin-panel",
-    "build": "npm run build --workspace backend && npm run build --workspace admin-panel",
+    "build": "npm run build:backend && npm run build --workspace admin-panel",
     "build:backend": "npm run prisma:generate --workspace backend && npm run build --workspace backend",
     "deploy:backend": "npm ci --include=dev && npm run build:backend",
     "typecheck": "npm run typecheck --workspace backend && npm run typecheck --workspace app && npm run typecheck --workspace admin-panel"

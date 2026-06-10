@@ -3,8 +3,8 @@ import { env } from "./config/env";
 import { prisma } from "./config/prisma";
 import { attachSupportWebSocket } from "./modules/support/support.ws";
 
-const server = app.listen(env.PORT, () => {
-  console.log(`Salon At Home API listening on http://localhost:${env.PORT}`);
+const server = app.listen(env.PORT, "0.0.0.0", () => {
+  console.log(`Salon At Home API listening on port ${env.PORT}`);
 });
 
 server.requestTimeout = 15_000;
