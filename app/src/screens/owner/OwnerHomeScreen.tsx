@@ -2,6 +2,7 @@ import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/dat
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { useBackHandler } from "../../hooks/useBackHandler";
 import { apiRequest } from "../../api/client";
 import { ThemeColors, useTheme } from "../../utils/theme";
 import { KeyboardAwareScreen } from "../common/KeyboardAwareScreen";
@@ -65,6 +66,23 @@ export function OwnerHomeScreen({ token }: { token: string }) {
   const [cashRemark, setCashRemark] = useState("");
   const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRange>("WEEK");
   const [activeBookingSection, setActiveBookingSection] = useState<BookingSection>(null);
+
+  useBackHandler(() => {
+    if (cashBookingId) {
+      setCashBookingId(null);
+      setCashRemark("");
+      return true;
+    }
+    if (reschedulingId) {
+      setReschedulingId(null);
+      return true;
+    }
+    if (activeBookingSection) {
+      setActiveBookingSection(null);
+      return true;
+    }
+    return false;
+  });
 
   useEffect(() => {
     void loadBookings();

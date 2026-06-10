@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, Touc
 import { Ionicons } from "@expo/vector-icons";
 import { WS_ORIGIN, apiRequest } from "../../api/client";
 import { ThemeColors, useTheme } from "../../utils/theme";
+import { useBackHandler } from "../../hooks/useBackHandler";
 import { ScreenHeader } from "../common/ScreenHeader";
 
 type Overview = {
@@ -90,6 +91,18 @@ export function AdminHomeScreen({ token }: { token: string }) {
   const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRange>("WEEK");
   const [activeSection, setActiveSection] = useState<AdminSection>(null);
   const wsRef = useRef<WebSocket | null>(null);
+
+  useBackHandler(() => {
+    if (activeTicketId) {
+      setActiveTicketId(null);
+      return true;
+    }
+    if (activeSection) {
+      setActiveSection(null);
+      return true;
+    }
+    return false;
+  });
 
   useEffect(() => {
     void loadOverview();

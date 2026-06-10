@@ -17,6 +17,7 @@ import { OwnerHomeScreen } from "./screens/owner/OwnerHomeScreen";
 import { OwnerSalonScreen } from "./screens/owner/OwnerSalonScreen";
 import { ProfileScreen } from "./screens/profile/ProfileScreen";
 import { palettes, ThemeMode, ThemeProvider, useTheme } from "./utils/theme";
+import { useBackHandler } from "./hooks/useBackHandler";
 
 export type UserRole = "CLIENT" | "OWNER" | "ADMIN";
 export type SessionUser = { id: string; name?: string | null; email?: string | null; phone: string; role: UserRole; profilePhotoUrl?: string | null; referralCode?: string | null };
@@ -48,6 +49,22 @@ function AppContent() {
   const [authStarted, setAuthStarted] = useState(false);
   const [tab, setTab] = useState<Tab>("home");
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  useBackHandler(() => {
+    if (!session) {
+      if (authStarted) {
+        setAuthStarted(false);
+        return true;
+      }
+      return false;
+    } else {
+      if (tab !== "home") {
+        setTab("home");
+        return true;
+      }
+      return false;
+    }
+  });
 
   useEffect(() => {
     void restoreSession();

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { apiAssetUrl, API_URL, apiRequest } from "../../api/client";
 import { ThemeColors, useTheme } from "../../utils/theme";
+import { useBackHandler } from "../../hooks/useBackHandler";
 import { KeyboardAwareScreen } from "../common/KeyboardAwareScreen";
 import { ScreenHeader } from "../common/ScreenHeader";
 
@@ -56,6 +57,18 @@ export function OwnerSalonScreen({ token }: { token: string }) {
   const [editingEmployee, setEditingEmployee] = useState<{ salonId: string; employeeId: string } | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+
+  useBackHandler(() => {
+    if (editingService) {
+      setEditingService(null);
+      return true;
+    }
+    if (editingEmployee) {
+      setEditingEmployee(null);
+      return true;
+    }
+    return false;
+  });
 
   useEffect(() => {
     void loadData();
@@ -322,6 +335,13 @@ export function OwnerSalonScreen({ token }: { token: string }) {
                 <Text style={styles.meta}>{salon.images.length} image(s) | {salon.services.length} service(s)</Text>
               </View>
             </View>
+            {!!salon.images?.length && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                {salon.images.map((img, idx) => (
+                  <Image key={`${img.id}-${idx}`} source={{ uri: apiAssetUrl(img.url) }} style={[styles.salonThumb, { marginRight: 8 }]} />
+                ))}
+              </ScrollView>
+            )}
             {salon.services.map((service) => (
               <View style={styles.serviceRow} key={service.id}>
                 <View style={styles.copy}>

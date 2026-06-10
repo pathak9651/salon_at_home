@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { ApiError, apiRequest } from "../../api/client";
 import { AuthSession } from "../../App";
 import { ThemeColors, useTheme } from "../../utils/theme";
+import { useBackHandler } from "../../hooks/useBackHandler";
 import { KeyboardAwareScreen } from "../common/KeyboardAwareScreen";
 
 type Mode = "login" | "signup" | "verify" | "forgot" | "reset";
@@ -13,6 +14,14 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (session: Aut
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const [mode, setMode] = useState<Mode>("login");
+
+  useBackHandler(() => {
+    if (mode !== "login") {
+      changeMode("login");
+      return true;
+    }
+    return false;
+  });
   const [accountType, setAccountType] = useState<AccountType>("CLIENT");
   const [name, setName] = useState("");
   const [identifier, setIdentifier] = useState("");

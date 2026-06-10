@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, NativeModules, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { apiRequest } from "../../api/client";
 import { ThemeColors, useTheme } from "../../utils/theme";
+import { useBackHandler } from "../../hooks/useBackHandler";
 import { KeyboardAwareScreen } from "../common/KeyboardAwareScreen";
 import { ScreenHeader } from "../common/ScreenHeader";
 
@@ -69,6 +70,18 @@ export function MyBookingsScreen({ token }: { token: string }) {
   const [reviewingBookingId, setReviewingBookingId] = useState<string | null>(null);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState("");
+
+  useBackHandler(() => {
+    if (reschedulingBookingId) {
+      setReschedulingBookingId(null);
+      return true;
+    }
+    if (reviewingBookingId) {
+      setReviewingBookingId(null);
+      return true;
+    }
+    return false;
+  });
 
   useEffect(() => {
     void loadBookings();

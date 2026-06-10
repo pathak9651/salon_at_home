@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import { Animated, Easing, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ThemeColors, useTheme } from "../../utils/theme";
+import { useBackHandler } from "../../hooks/useBackHandler";
 
 const onboardingPages = [
   {
@@ -25,6 +26,15 @@ export function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const [pageIndex, setPageIndex] = useState(0);
+
+  useBackHandler(() => {
+    if (pageIndex > 0) {
+      setPageIndex((current) => current - 1);
+      return true;
+    }
+    return false;
+  });
+
   const sweep = useRef(new Animated.Value(0)).current;
   const float = useRef(new Animated.Value(0)).current;
 

@@ -2,6 +2,7 @@ import * as Location from "expo-location";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
+import { useBackHandler } from "../../hooks/useBackHandler";
 import { ActivityIndicator, Image, Linking, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { apiAssetUrl, apiRequest } from "../../api/client";
 import { ThemeColors, useTheme } from "../../utils/theme";
@@ -98,6 +99,18 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
   const [radiusKm, setRadiusKm] = useState(25);
   const [maxPrice, setMaxPrice] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
+
+  useBackHandler(() => {
+    if (selectedSalon) {
+      setSelectedSalon(null);
+      return true;
+    }
+    if (showFilters) {
+      setShowFilters(false);
+      return true;
+    }
+    return false;
+  });
   const [showPromoPopup, setShowPromoPopup] = useState(true);
   const [activePromoIndex, setActivePromoIndex] = useState(0);
   const [loadingLocation, setLoadingLocation] = useState(false);
@@ -343,7 +356,7 @@ export function ClientHomeScreen({ token, onBookingCompleted }: { token: string;
         {loadingDetails ? <ActivityIndicator color={colors.cyan} /> : null}
 
         <Text style={styles.section}>SALON IMAGES</Text>
-        {gallery.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false}>{gallery.map((url, index) => <Image key={`${url}-${index}`} source={{ uri: url }} style={styles.galleryImage} />)}</ScrollView> : <View style={styles.imagePlaceholder}><Text style={styles.empty}>No images uploaded yet.</Text></View>}
+        {gallery.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false}>{gallery.map((url, index) => <Image key={`${url}-${index}`} source={{ uri: apiAssetUrl(url) }} style={styles.galleryImage} />)}</ScrollView> : <View style={styles.imagePlaceholder}><Text style={styles.empty}>No images uploaded yet.</Text></View>}
 
         <Text style={styles.section}>REVIEWS & RATINGS</Text>
         <View style={styles.reviewSummary}>

@@ -37,6 +37,7 @@ type ApiErrorBody = {
 export function apiAssetUrl(path?: string | null) {
   if (!path) return undefined;
   if (/^https?:\/\//i.test(path)) return path;
+  if (path.startsWith("data:")) return path;
   return `${API_ORIGIN}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
