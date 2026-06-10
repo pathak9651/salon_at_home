@@ -2,20 +2,37 @@ import { NextFunction, Request, Response } from "express";
 import sharp from "sharp";
 import { HttpError } from "../utils/http-error";
 
-const allowedMimeTypes = ["image/jpeg", "image/png", "image/webp"] as const;
+const allowedMimeTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"] as const;
 export type AllowedImageMimeType = typeof allowedMimeTypes[number];
 
 export const imageExtensionByType: Record<AllowedImageMimeType, string> = {
   "image/jpeg": "jpg",
+  "image/jpg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
 };
 
-export async function normalizeUploadedImage(buffer: Buffer, contentType: string) {
-  const image = sharp(buffer, { limitInputPixels: 16_000_000 }).rotate();
-  if (contentType === "image/jpeg") return image.jpeg({ quality: 85, mozjpeg: true }).toBuffer();
-  if (contentType === "image/png") return image.png({ compressionLevel: 9 }).toBuffer();
-  if (contentType === "image/webp") return image.webp({ quality: 85 }).toBuffer();
+export async function normalizeUploadedImage(
+  buffer: Buffer,
+  contentType: string,
+  maxWidth = 1200,
+  maxHeight = 1200,
+) {
+  let image = sharp(buffer, { limitInputPixels: 16_000_000 }).rotate();
+  
+  // Resize to fit inside bounding box to save space and bridge latency
+  image = image.resize({
+    width: maxWidth,
+    height: maxHeight,
+    fit: "inside",
+    withoutEnlargement: true,
+  });
+
+  const cleanMimeType = contentType === "image/jpg" ? "image/jpeg" : contentType;
+
+  if (cleanMimeType === "image/jpeg") return image.jpeg({ quality: 82, mozjpeg: true }).toBuffer();
+  if (cleanMimeType === "image/png") return image.png({ compressionLevel: 9 }).toBuffer();
+  if (cleanMimeType === "image/webp") return image.webp({ quality: 82 }).toBuffer();
   throw new HttpError(415, "Only JPG, PNG, or WEBP images are supported");
 }
 
@@ -49,7 +66,8 @@ export function requireImageUpload(req: Request, _res: Response, next: NextFunct
     return next(new HttpError(400, "Upload an image file"));
   }
   const detectedMime = detectImageMime(req.body);
-  if (!detectedMime || detectedMime !== contentType) {
+  const isJpgMatch = detectedMime === "image/jpeg" && contentType === "image/jpg";
+  if (!detectedMime || (detectedMime !== contentType && !isJpgMatch)) {
     return next(new HttpError(415, "Uploaded file does not match a supported image type"));
   }
   next();

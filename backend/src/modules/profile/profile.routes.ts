@@ -118,11 +118,11 @@ router.patch("/", asyncHandler(async (req, res) => {
   }));
 }));
 
-router.put("/photo", express.raw({ type: ["image/jpeg", "image/png", "image/webp"], limit: "3mb" }), requireImageUpload, asyncHandler(async (req, res) => {
+router.put("/photo", express.raw({ type: ["image/jpeg", "image/jpg", "image/png", "image/webp"], limit: "10mb" }), requireImageUpload, asyncHandler(async (req, res) => {
   const mimeType = req.header("content-type") ?? "image/jpeg";
-  const normalizedBuffer = await normalizeUploadedImage(req.body, mimeType);
+  const normalizedBuffer = await normalizeUploadedImage(req.body, mimeType, 400, 400);
   const base64Data = normalizedBuffer.toString("base64");
-  const profilePhotoUrl = `data:${mimeType};base64,${base64Data}`;
+  const profilePhotoUrl = `data:${mimeType === "image/jpg" ? "image/jpeg" : mimeType};base64,${base64Data}`;
 
   const user = await prisma.user.update({
     where: { id: req.user!.id },

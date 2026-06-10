@@ -151,14 +151,14 @@ router.post("/:id/images", requireAuth, requireRole(UserRole.OWNER), asyncHandle
   res.status(201).json(await prisma.salonImage.create({ data: { ...data, salonId: salon.id } }));
 }));
 
-router.post("/:id/images/upload", requireAuth, requireRole(UserRole.OWNER), express.raw({ type: ["image/jpeg", "image/png", "image/webp"], limit: "5mb" }), requireImageUpload, asyncHandler(async (req, res) => {
+router.post("/:id/images/upload", requireAuth, requireRole(UserRole.OWNER), express.raw({ type: ["image/jpeg", "image/jpg", "image/png", "image/webp"], limit: "10mb" }), requireImageUpload, asyncHandler(async (req, res) => {
   const salon = await prisma.salon.findFirst({ where: { id: String(req.params.id), ownerId: req.user!.id } });
   if (!salon) throw new HttpError(404, "Salon not found");
 
   const mimeType = req.header("content-type") ?? "image/jpeg";
-  const normalizedBuffer = await normalizeUploadedImage(req.body, mimeType);
+  const normalizedBuffer = await normalizeUploadedImage(req.body, mimeType, 1200, 900);
   const base64Data = normalizedBuffer.toString("base64");
-  const dataUrl = `data:${mimeType};base64,${base64Data}`;
+  const dataUrl = `data:${mimeType === "image/jpg" ? "image/jpeg" : mimeType};base64,${base64Data}`;
 
   const image = await prisma.salonImage.create({
     data: { salonId: salon.id, url: dataUrl, caption: "Salon photo" },

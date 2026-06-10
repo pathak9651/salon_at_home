@@ -29,12 +29,15 @@ app.use(rejectUnsupportedContentType);
 app.use(express.json({ limit: env.JSON_BODY_LIMIT }));
 app.use(noStore);
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads"), {
-  fallthrough: false,
+  fallthrough: true,
   maxAge: env.NODE_ENV === "production" ? "7d" : 0,
   setHeaders(res) {
     res.setHeader("X-Content-Type-Options", "nosniff");
   },
 }));
+app.use("/uploads", (_req, res) => {
+  res.status(404).json({ error: "File not found" });
+});
 
 app.get("/health", (_req, res) => res.json({ status: "ok", service: "salon-at-home-api" }));
 app.use("/api/auth", ipBlocker, authIpAbuseLimiter, authRoutes);

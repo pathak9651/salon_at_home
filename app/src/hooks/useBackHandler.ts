@@ -7,10 +7,32 @@ export function useBackHandler(handler: () => boolean) {
 
   useEffect(() => {
     const onBackPress = () => {
-      return handlerRef.current();
+      try {
+        return handlerRef.current();
+      } catch (e) {
+        console.error("Error in back handler:", e);
+        return false;
+      }
     };
 
-    const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
-    return () => subscription.remove();
+    let subscription: any;
+    try {
+      subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    } catch (e) {
+      console.error("Failed to add back handler listener:", e);
+    }
+
+    return () => {
+      try {
+        if (subscription && typeof subscription.remove === "function") {
+          subscription.remove();
+        } else {
+          // Fallback for older React Native versions or environments
+          (BackHandler as any).removeEventListener("hardwareBackPress", onBackPress);
+        }
+      } catch (e) {
+        console.warn("Failed to remove back handler listener:", e);
+      }
+    };
   }, []);
 }
